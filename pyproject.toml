@@ -22,6 +22,19 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
 ]
+keywords = [
+    "json",
+    "jsonapi",
+    "api",
+    "rest",
+    "json:api specification",
+    "json:api",
+    "pydantic",
+    "flask",
+    "fastapi",
+    "sqlalchemy",
+    "django",
+]
 packages = [
     { include = "pyjas" },
     { include = "pyjas.v1_1" },
