@@ -2,7 +2,8 @@ from abc import ABCMeta, abstractmethod
 from typing import Any
 
 from pyjas.core.classes import JsonAPISpecificationObject
-from pyjas.core.util import transform_header_parameters, validate_uri_parameter
+from pyjas.core.exceptions import PyJASException
+from pyjas.core.util import transform_header_parameters, validate_extension_name, validate_uri_parameter
 
 # Standard JSON API header
 STANDARD_HEADER = 'application/vnd.api+json'
@@ -103,8 +104,17 @@ class JsonAPIExtension(JsonAPIParameter):
         super().__init__(uri, rules, description)
 
         self.namespace = namespace
+
+        # Validate the parameters
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate the parameters."""
         assert self.namespace is not None, 'The namespace of the extension must be provided.'
-        assert self.namespace.isalnum(), 'The namespace must be an alphanumeric string.'
+
+        for key in self.namespace.keys():
+            if not validate_extension_name(key):
+                raise PyJASException(f'Invalid extension extension: {key}')
 
 
 class JsonAPIProfile(JsonAPIParameter):
@@ -175,6 +185,16 @@ class JsonAPIHeader(JsonAPISpecificationObject):
 
         return {'Content-Type': header}
 
+    def accept(self) -> dict[str, Any]:
+        """Converts the object to a dictionary."""
+        header = self._content_type
+        if self.ext:
+            header += f'; ext={transform_header_parameters(self.ext)}'
+        if self.profile:
+            header += f'; profile={transform_header_parameters(self.profile)}'
+
+        return {'Accept': header}
+
     @classmethod
     def builder(cls) -> 'JsonAPIHeaderBuilder':
         """Returns a new instance of JsonAPIHeaderBuilder."""
@@ -187,6 +207,21 @@ class JsonAPIHeaderBuilder:
     def __init__(self):
         self._ext: list[JsonAPIExtension] = []
         self._profile: list[str] = []
+
+    def from_string(self, header: str) -> 'JsonAPIHeaderBuilder':
+        """Sets the header from a string."""
+        if header:
+            parts = header.split(';')
+            self._content_type = parts[0]
+            for part in parts[1:]:
+                key, value = part.split('=')
+                if key == 'ext':
+                    self._ext.append(value)
+                elif key == 'profile':
+                    self._profile.append(value)
+                else:
+                    raise ValueError(f'Unsupported Media Type: {key}')
+        return self
 
     def add_ext(self, ext: JsonAPIExtension) -> 'JsonAPIHeaderBuilder':
         """Sets the ext attribute."""
