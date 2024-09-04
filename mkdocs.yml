@@ -46,11 +46,11 @@ theme:
 nav:
   - Getting Started:
     - Welcome: getting-started/welcome.md
-    - getting-started/installation.md
-    - getting-started/contributing.md
-    - Recent Changes: getting-started/changelog.md
-  - API:
-    - API Reference: api/api-reference.md
+    # - getting-started/installation.md
+    # - getting-started/contributing.md
+    # - Recent Changes: getting-started/changelog.md
+  # - API:
+  #   - API Reference: api/api-reference.md
 
 plugins:
   - search
