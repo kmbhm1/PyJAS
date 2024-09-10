@@ -18,9 +18,9 @@ class JSONAPIImplementationObject:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, JSONAPIImplementationObject):
             return NotImplemented
-        return self.to_dict() == other.to_dict()
+        return bool(self.to_dict() == other.to_dict())
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Returns the JSON API implementation object as a dictionary."""
 
         profiles = [str(p) for p in self.profile] if self.profile else None

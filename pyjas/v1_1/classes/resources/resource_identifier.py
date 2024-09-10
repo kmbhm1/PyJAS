@@ -1,3 +1,5 @@
+from typing import Any
+
 from pyjas.core.classes import MemberName
 from pyjas.core.exceptions import PyJASException
 from pyjas.core.util import is_valid_member_name
@@ -41,7 +43,7 @@ class JsonAPIResourceIdentifierObject:
         if isinstance(self.type_, str) and not is_valid_member_name(self.type_):
             raise PyJASException('The type_ attribute must be a valid member name.')
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         """Returns the resource identifier object as a dictionary."""
         self._validate()
 
@@ -56,35 +58,35 @@ class JsonAPIResourceIdentifierObject:
 
     def builder(cls, type_: str, id_: str) -> 'JsonAPIResourceIdentifierObjectBuilder':
         """Returns a new instance of JsonAPIResourceIdentifierObjectBuilder."""
-        return JsonAPIResourceIdentifierObjectBuilder(type_, id_)
+        return JsonAPIResourceIdentifierObjectBuilder()
 
 
 class JsonAPIResourceIdentifierObjectBuilder:
     """A class to build a JSON API resource identifier object."""
 
-    def __init__(self, type_: str | None = None, id_: str | None = None) -> None:
-        self._resource_type = type_
-        self._resource_id = id_
+    def __init__(self) -> None:
+        self._resource_type: str | MemberName = ''
+        self._resource_id: str = ''
 
     @property
-    def type_(self) -> str | None:
-        """str | None: Gets the type of the resource."""
+    def type_(self) -> str | MemberName:
+        """str: Gets the type of the resource."""
         return self._resource_type
 
     @type_.setter
-    def set_type_(self, value: str | MemberName) -> None:
+    def type_(self, value: str | MemberName) -> None:
         """Sets the type of the resource."""
-        if isinstance(self.type_, str) and not is_valid_member_name(value):
+        if isinstance(self.type_, str) and not is_valid_member_name(str(value)):
             raise PyJASException('The type_ attribute must be a valid member name.')
         self._resource_type = value
 
     @property
-    def id_(self) -> str | None:
-        """str | None: Gets the unique identifier for the resource."""
+    def id_(self) -> str:
+        """str: Gets the unique identifier for the resource."""
         return self._resource_id
 
     @id_.setter
-    def set_id_(self, value: str) -> None:
+    def id_(self, value: str) -> None:
         """Sets the unique identifier for the resource."""
         self._resource_id = value
 

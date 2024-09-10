@@ -117,7 +117,7 @@ def is_valid_namespace(namespace: str) -> bool:
     return re.match(namespace_regex, namespace) is not None
 
 
-def validate_extension_name(name: str) -> None:
+def validate_extension_name(name: str) -> bool:
     """Validates an extension name."""
     # Check that colon appears in string
     if ':' in name:

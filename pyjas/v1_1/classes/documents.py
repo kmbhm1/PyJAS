@@ -5,7 +5,8 @@ from pyjas.core.exceptions import PyJASException
 from pyjas.core.util import validate_uri_parameter
 from pyjas.v1_1.classes.jsonapi_implementation import JSONAPIImplementationObject
 from pyjas.v1_1.classes.links import JsonAPILinksType, JsonAPITopLevelLinksObject
-from pyjas.v1_1.classes.resources import JsonAPIResourceIdentifierObject, JsonAPIResourceObject
+from pyjas.v1_1.classes.resources.resource import JsonAPIResourceObject
+from pyjas.v1_1.classes.resources.resource_identifier import JsonAPIResourceIdentifierObject
 
 
 class JsonAPIDocument(JsonAPISpecificationObject):
@@ -79,8 +80,13 @@ class JsonAPIDocument(JsonAPISpecificationObject):
         """Returns the document as a dictionary."""
         self._validate()
 
+        data = (
+            ([x.to_dict() for x in self.data] if isinstance(self.data, list) else self.data.to_dict())
+            if self.data
+            else None
+        )
         d = {
-            'data': self.data.to_dict() if self.data else None,
+            'data': data,
             'errors': self.errors if self.errors else None,
             'meta': self.meta if self.meta else None,
             **self.extension_members,  # Include additional attributes
@@ -101,13 +107,19 @@ class JsonAPIDocumentBuilder:
     """A class to build a JSON API document."""
 
     def __init__(self) -> None:
-        self._data = None
-        self._errors = None
-        self._meta = None
-        self._jsonapi = None
-        self._links = None
-        self._included = None
-        self._extension_members = {}
+        self._data: (
+            JsonAPIResourceObject
+            | list[JsonAPIResourceObject]
+            | JsonAPIResourceIdentifierObject
+            | list[JsonAPIResourceIdentifierObject]
+            | None
+        ) = None
+        self._errors: list[Any] = []
+        self._meta: dict[str, Any] = {}
+        self._jsonapi: JSONAPIImplementationObject | None = None
+        self._links: JsonAPITopLevelLinksObject = JsonAPITopLevelLinksObject()
+        self._included: list[JsonAPIResourceObject] = []
+        self._extension_members: dict[str, Any] = {}
 
     @property
     def data(
@@ -119,11 +131,11 @@ class JsonAPIDocumentBuilder:
         | list[JsonAPIResourceIdentifierObject]
         | None
     ):
-        """JsonAPIResourceObject | list[JsonAPIResourceObject] | JsonAPIResourceIdentifierObject | list[JsonAPIResourceIdentifierObject] | None: Gets the document's primary data."""
+        """JsonAPIResourceObject | list[JsonAPIResourceObject] | JsonAPIResourceIdentifierObject | list[JsonAPIResourceIdentifierObject] | None: Gets the document's primary data."""  # noqa: E501
         return self._data
 
     @data.setter
-    def set_data(
+    def data(
         self,
         value: JsonAPIResourceObject
         | list[JsonAPIResourceObject]
@@ -135,52 +147,52 @@ class JsonAPIDocumentBuilder:
         self._data = value
 
     @property
-    def errors(self) -> list[Any] | None:
-        """list[Any] | None: Gets the document's error objects."""
+    def errors(self) -> list[Any]:
+        """list[Any]: Gets the document's error objects."""
         return self._errors
 
     @errors.setter
-    def set_errors(self, value: list[Any] | None) -> None:
+    def errors(self, value: list[Any]) -> None:
         """Sets the document's error objects."""
         self._errors = value
 
     @property
-    def meta(self) -> dict[str, Any] | None:
-        """dict[str, Any] | None: Gets the document's meta object."""
+    def meta(self) -> dict[str, Any]:
+        """dict[str, Any]: Gets the document's meta object."""
         return self._meta
 
     @meta.setter
-    def set_meta(self, value: dict[str, Any] | None) -> None:
+    def meta(self, value: dict[str, Any]) -> None:
         """Sets the document's meta object."""
         self._meta = value
 
     @property
-    def jsonapi(self) -> str | None:
-        """str | None: Gets the document's JSON API object."""
+    def jsonapi(self) -> JSONAPIImplementationObject | None:
+        """str: Gets the document's JSON API object."""
         return self._jsonapi
 
     @jsonapi.setter
-    def set_jsonapi(self, value: str | None) -> None:
+    def jsonapi(self, value: JSONAPIImplementationObject) -> None:
         """Sets the document's JSON API object."""
         self._jsonapi = value
 
     @property
-    def links(self) -> JsonAPILinksType | None:
-        """JsonAPILinksType | None: Gets the document's links object."""
+    def links(self) -> JsonAPITopLevelLinksObject:
+        """JsonAPILinksType: Gets the document's links object."""
         return self._links
 
     @links.setter
-    def set_links(self, value: JsonAPILinksType) -> None:
+    def links(self, value: JsonAPITopLevelLinksObject) -> None:
         """Sets the document's links object."""
         self._links = value
 
     @property
-    def included(self) -> dict[str, Any] | None:
-        """dict[str, Any] | None: Gets the document's included resources."""
+    def included(self) -> list[JsonAPIResourceObject]:
+        """list[JsonAPIResourceObject]: Gets the document's included resources."""
         return self._included
 
     @included.setter
-    def set_included(self, value: list[JsonAPIResourceObject] | JsonAPIResourceObject | None) -> None:
+    def included(self, value: list[JsonAPIResourceObject] | JsonAPIResourceObject) -> None:
         """Sets the document's included resources."""
         if isinstance(value, list):
             self._included = value

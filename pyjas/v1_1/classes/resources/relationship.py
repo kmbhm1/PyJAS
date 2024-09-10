@@ -50,9 +50,14 @@ class JsonAPIRelationshipsObject:
         """Returns the relationships object as a dictionary."""
         self._validate()
 
+        data = (
+            ([x.to_dict() for x in self.data] if isinstance(self.data, list) else self.data.to_dict())
+            if self.data
+            else None
+        )
         relationships = {
             'links': self.links.to_dict() if self.links else None,
-            'data': self.data.to_dict() if self.data else None,
+            'data': data,
             'meta': self.meta if self.meta else None,
             **self.additional_members,  # Include additional attributes
         }
@@ -69,10 +74,10 @@ class JsonAPIRelationshipsBuilder:
     """A class to build a JSON API relationships object."""
 
     def __init__(self) -> None:
-        self._links = None
-        self._data = None
-        self._meta = None
-        self._additional_members = {}  # Dictionary to hold arbitrary attributes
+        self._links: JsonAPITopLevelLinksObject | None = None
+        self._data: JsonAPIResourceLinkageType | None = None
+        self._meta: dict[str, Any] = {}
+        self._additional_members: dict[str, Any] = {}  # Dictionary to hold arbitrary attributes
 
     @property
     def links(self) -> JsonAPITopLevelLinksObject | None:
@@ -80,27 +85,27 @@ class JsonAPIRelationshipsBuilder:
         return self._links
 
     @links.setter
-    def set_links(self, value: JsonAPITopLevelLinksObject) -> None:
+    def links(self, value: JsonAPITopLevelLinksObject | None) -> None:
         """Sets the links of the resource."""
         self._links = value
 
     @property
     def data(self) -> JsonAPIResourceLinkageType | None:
-        """JsonAPIResourceLinkageType | None: Gets the data of the resource."""
+        """JsonAPIResourceLinkageType: Gets the data of the resource."""
         return self._data
 
     @data.setter
-    def set_data(self, value: JsonAPIResourceLinkageType) -> None:
+    def data(self, value: JsonAPIResourceLinkageType | None) -> None:
         """Sets the data of the resource."""
         self._data = value
 
     @property
-    def meta(self) -> dict[str, Any] | None:
-        """dict[str, Any] | None: Gets the meta of the resource."""
+    def meta(self) -> dict[str, Any]:
+        """dict[str, Any]: Gets the meta of the resource."""
         return self._meta
 
     @meta.setter
-    def set_meta(self, value: dict[str, Any]) -> None:
+    def meta(self, value: dict[str, Any]) -> None:
         """Sets the meta of the resource."""
         self._meta = value
 

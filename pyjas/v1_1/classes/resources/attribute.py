@@ -37,7 +37,7 @@ class JsonAPIAttributesObject:
         return self.attributes
 
     @classmethod
-    def builder(cls, o: BaseModel) -> 'JsonAPIAttributesObject':
+    def builder(cls, o: BaseModel) -> 'JsonAPIAttributesBuilder':
         """Returns a new instance of JsonAPIAttributesBuilder."""
         return JsonAPIAttributesBuilder(o)
 
@@ -46,15 +46,15 @@ class JsonAPIAttributesBuilder:
     """A class to build a JSON API attributes object."""
 
     def __init__(self, o: BaseModel | None = None) -> None:
-        self._attributes = o.model_dump()
+        self._attributes: dict[str, Any] = o.model_dump() if o else {}
 
     @property
-    def attributes(self) -> BaseModel:
+    def attributes(self) -> dict[str, Any]:
         """BaseModel: Gets the attributes of the resource."""
         return self._attributes
 
     @attributes.setter
-    def set_attributes(self, value: BaseModel | dict) -> None:
+    def attributes(self, value: BaseModel | dict) -> None:
         """Sets the attributes of the resource."""
         if isinstance(value, dict):
             self._attributes = value

@@ -70,6 +70,7 @@ class JsonAPIParameter(JsonAPISpecificationObject):
         """Evaluates the extension against a request."""
         for rule in self.rules.values():
             rule(request)  # Evaluate the request
+        return True  # TODO: correct this; placeholder
 
     def value(self) -> str:
         """Converts the object to a string."""
@@ -159,7 +160,9 @@ class JsonAPIHeader(JsonAPISpecificationObject):
         profile (str | list[str]): The profile(s) to include in the header.
     """  # noqa: E501
 
-    def __init__(self, ext: JsonAPIExtension | list[JsonAPIExtension] = None, profile: str | list[str] = None):
+    def __init__(
+        self, ext: JsonAPIExtension | list[JsonAPIExtension] | None = None, profile: str | list[str] | None = None
+    ):
         self.ext = ext
         self.profile = profile
         self._content_type = STANDARD_HEADER
@@ -179,7 +182,8 @@ class JsonAPIHeader(JsonAPISpecificationObject):
         """Converts the object to a dictionary."""
         header = self._content_type
         if self.ext:
-            header += f'; ext={transform_header_parameters(self.ext)}'
+            items = [e.value() for e in self.ext] if isinstance(self.ext, list) else [self.ext.value()]
+            header += f'; ext={transform_header_parameters(items)}'
         if self.profile:
             header += f'; profile={transform_header_parameters(self.profile)}'
 
@@ -189,7 +193,8 @@ class JsonAPIHeader(JsonAPISpecificationObject):
         """Converts the object to a dictionary."""
         header = self._content_type
         if self.ext:
-            header += f'; ext={transform_header_parameters(self.ext)}'
+            items = [e.value() for e in self.ext] if isinstance(self.ext, list) else [self.ext.value()]
+            header += f'; ext={transform_header_parameters(items)}'
         if self.profile:
             header += f'; profile={transform_header_parameters(self.profile)}'
 
@@ -204,7 +209,7 @@ class JsonAPIHeader(JsonAPISpecificationObject):
 class JsonAPIHeaderBuilder:
     """A class that provides methods to build a JsonAPIHeader object."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._ext: list[JsonAPIExtension] = []
         self._profile: list[str] = []
 
@@ -216,7 +221,9 @@ class JsonAPIHeaderBuilder:
             for part in parts[1:]:
                 key, value = part.split('=')
                 if key == 'ext':
-                    self._ext.append(value)
+                    # TODO: Correct this later
+                    ext = JsonAPIExtension(value, {}, {})
+                    self._ext.append(ext)
                 elif key == 'profile':
                     self._profile.append(value)
                 else:

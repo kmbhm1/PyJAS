@@ -33,10 +33,10 @@ class URL:
             raise ValueError(f'Invalid URL: {url}')
         self._url = url
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self._url
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'URL({self._url})'
 
     def __eq__(self, other: Any) -> bool:
@@ -56,10 +56,10 @@ class MemberName:
             raise ValueError(f'Invalid member name: {name}')
         self._name = name
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self._name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'MemberName({self._name})'
 
     def __eq__(self, other: Any) -> bool:
