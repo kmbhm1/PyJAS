@@ -25,9 +25,9 @@ jobs:
       - name: Install dependencies
         run: poetry install
       - name: Lint checking
-        run: poetry run ruff check -v --output-format=github --exclude=poc .
+        run: poetry run ruff check -v --output-format=github .
       - name: Type checking
-        run: poetry run mypy -v --exclude='^poc/' .
+        run: poetry run mypy -v .
       - name: Build package
         run: poetry build
 

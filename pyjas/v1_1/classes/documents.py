@@ -4,7 +4,7 @@ from pyjas.core.classes import JsonAPISpecificationObject
 from pyjas.core.exceptions import PyJASException
 from pyjas.core.util import validate_uri_parameter
 from pyjas.v1_1.classes.jsonapi_implementation import JSONAPIImplementationObject
-from pyjas.v1_1.classes.links import JsonAPILinksType, JsonAPITopLevelLinksObject
+from pyjas.v1_1.classes.links import JsonAPITopLevelLinksObject
 from pyjas.v1_1.classes.resources.resource import JsonAPIResourceObject
 from pyjas.v1_1.classes.resources.resource_identifier import JsonAPIResourceIdentifierObject
 
