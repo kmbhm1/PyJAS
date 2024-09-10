@@ -1,0 +1,90 @@
+site_name: Python JSON:API Standard
+site_url: https://kmbhm1.github.io/PyJAS/
+repo_url: https://github.com/kmbhm1/PyJAS
+repo_name: kmbhm1/PyJAS
+site_description: A JSON:API Standard (PyJAS) implementation for Python
+site_author: KB <kmbhm1@gmail.com>
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: grey
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github-alt
+  font:
+    text: Roboto
+  features:
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - navigation.expand
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.tabs
+    - navigation.top
+    - toc.follow
+    - toc.integrate
+
+nav:
+  - Getting Started:
+    - Welcome: getting-started/welcome.md
+    # - getting-started/installation.md
+    # - getting-started/contributing.md
+    # - Recent Changes: getting-started/changelog.md
+  # - API:
+  #   - API Reference: api/api-reference.md
+
+plugins:
+  - search
+  - mkdocstrings
+  - redirects:
+      redirect_maps:
+        'index.md': 'getting-started/welcome.md'
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - admonition
+  - pymdownx.details
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/kmbhm1/PyJAS
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/kevin-b-stl/
+  generator: false
+
+copyright: Copyright &copy; 2024 <a href="https://github.com/kmbhm1/" target="_blank" rel="noopener">kmbhm1</a>
