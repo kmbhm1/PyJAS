@@ -3,12 +3,15 @@ from __future__ import annotations
 # jsonapi_document.py
 import re
 import uuid
-from typing import Any, Union
+from typing import Annotated, Any, Union
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
+    conlist,
+    constr,
     field_validator,
     model_validator,
 )
@@ -69,6 +72,9 @@ def validate_member_name(name: str) -> None:
             raise ValueError(f"Member name '{name}' contains reserved character '{char}' which is not allowed.")
 
 
+NonEmptyStr = Annotated[str, constr(strip_whitespace=True, min_length=1)]
+
+
 class ResourceIdentifierObject(BaseModel):
     """ResourceIdentifierObject enforces a resource identifier in a JSON:API document.
 
@@ -76,11 +82,11 @@ class ResourceIdentifierObject(BaseModel):
     Note that extra members are allowed in the ResourceIdentifierObject.
 
     Required fields:
-        type (str): The type of the resource.
+        type (NonEmptyStr): The type of the resource.
 
     Optional fields:
-        id (str): The id of the resource.
-        lid (str): A locally unique identifier for the resource.
+        id (NonEmptyStr): The id of the resource.
+        lid (NonEmptyStr): A locally unique identifier for the resource.
         meta (dict): a meta object containing non-standard meta-information about the resource.
 
     Raises:
@@ -94,9 +100,9 @@ class ResourceIdentifierObject(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    type_: str = Field(..., alias='type')
-    id_: str | None = Field(None, alias='id')
-    lid: str | None = None
+    type_: NonEmptyStr = Field(..., alias='type')
+    id_: NonEmptyStr | None = Field(None, alias='id')
+    lid: NonEmptyStr | None = None
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
@@ -124,11 +130,11 @@ class LinkObject(BaseModel):
     Refer to https://jsonapi.org/format/#auto-id--link-objects for more information.
 
     Required fields:
-        href (str): The URL of the link.
+        href (HttpUrl): The URL of the link.
 
     Optional fields:
         rel (str): a string indicating the link's relation type. The string MUST be a valid link relation type.
-        describedby (str): a link to a description document (e.g. OpenAPI or JSON Schema) for the link target.
+        describedby (HttpUrl): a link to a description document (e.g. OpenAPI or JSON Schema) for the link target.
         title (str): a string which serves as a label for the destination of a link such that it can be used as a
             human-readable identifier (e.g., a menu entry).
         type (str): a string indicating the media type of the link's target.
@@ -146,46 +152,55 @@ class LinkObject(BaseModel):
         LinkObject: a validated LinkObject instance.
     """
 
-    href: str
-    rel: str | None = None
-    describedby: str | None = None
-    title: str | None = None
-    type_: str | None = Field(None, alias='type')
-    hreflang: list[str] | str | None = None
+    model_config = ConfigDict(extra='forbid')
+
+    href: HttpUrl
+    rel: NonEmptyStr | None = None
+    describedby: HttpUrl | None = None
+    title: NonEmptyStr | None = None
+    type_: NonEmptyStr | None = Field(None, alias='type')
+    hreflang: Annotated[list[NonEmptyStr], conlist(NonEmptyStr, min_length=1)] | NonEmptyStr | None = None
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
     def validate_link_object(self):
         """Validate the LinkObject according to the JSON:API spec."""
-        # hreflang: a string or an array of strings indicating the language(s) of the
-        # link's target. An array of strings indicates that the link's target is available
-        # in multiple languages. Each string MUST be a valid language tag [RFC5646].
-        if self.hreflang is not None:
-            if isinstance(self.hreflang, str) and not self._is_valid_language_tag(self.hreflang):
-                raise ValueError(f"'hreflang' must be a valid language tag. Got: {self.hreflang}")
-            elif isinstance(self.hreflang, list):
-                for lang in self.hreflang:
-                    if not isinstance(lang, str):
-                        raise ValueError(f"Each 'hreflang' entry must be a string. Got: {lang}")
-                    if not self._is_valid_language_tag(lang):
-                        raise ValueError(f"'hreflang' must be a valid language tag. Got: {lang}")
-            else:
-                raise ValueError("'hreflang' must be a string or a list of strings.")
-
         # If 'rel' is present, ensure it's a valid relation type (simple string validation)
-        if self.rel is not None:
+        if self.rel is not None and bool(self.rel):
             if not isinstance(self.rel, str):
                 raise ValueError("'rel' must be a string indicating the link's relation type.")
             if not self.rel.isalnum():
                 raise ValueError("'rel' must be a valid link relation type (alphanumeric characters only).")
 
+        # hreflang: a string or an array of strings indicating the language(s) of the
+        # link's target. An array of strings indicates that the link's target is available
+        # in multiple languages. Each string MUST be a valid language tag [RFC5646].
+        if self.hreflang is not None:
+            if not bool(self.hreflang) and isinstance(self.hreflang, list | str):
+                raise ValueError("'hreflang' must be a non-empty string or a list of non-empty strings.")
+            elif isinstance(self.hreflang, str) and not self._is_valid_language_tag(self.hreflang):
+                raise ValueError(f"'hreflang' must be a valid language tag. Got: {self.hreflang}")
+            elif isinstance(self.hreflang, list):
+                if len(self.hreflang) == 0:
+                    raise ValueError("'hreflang' must be a non-empty list of language tags.")
+                for lang in self.hreflang:
+                    if not isinstance(lang, str):
+                        raise ValueError(f"Each 'hreflang' entry must be a string. Got: {lang}")
+                    if not self._is_valid_language_tag(lang):
+                        raise ValueError(f"'hreflang' must be a valid language tag. Got: {lang}")
+            elif not isinstance(self.hreflang, str | list):
+                raise ValueError("'hreflang' must be a string or a list of strings.")
+
         return self
 
     @staticmethod
     def _is_valid_language_tag(tag: str) -> bool:
-        """Validate that the language tag conforms to RFC 5646."""
+        """Validate that the language tag conforms to RFC 5646.
+
+        Ref: https://stackoverflow.com/a/38959322
+        """
         # Simple regex for basic language tags (not exhaustive)
-        pattern = re.compile(r'^[a-zA-Z]{2,3}(-[a-zA-Z]{2,3})?$')
+        pattern = re.compile(r'^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$')
         return bool(pattern.match(tag))
 
 
@@ -245,8 +260,6 @@ class RelationshipObject(BaseModel):
                     raise ValueError(f"Link '{link_key}' must be a string URI, LinkObject, or null.")
                 if isinstance(link_value, str) and not is_valid_uri(link_value):
                     raise ValueError(f"Link '{link_key}' must be a valid URI-reference.")
-                if isinstance(link_value, LinkObject):
-                    link_value = LinkObject(**link_value.model_dump())  # Ensure LinkObject validation
 
         # Validate data linkage
         if self.data:
@@ -307,9 +320,9 @@ class ResourceObject(BaseModel):
 
     model_config = ConfigDict(extra='forbid')
 
-    type_: str = Field(..., alias='type')
-    id_: str | None = Field(None, alias='id')
-    lid: str | None = None
+    type_: NonEmptyStr = Field(..., alias='type')
+    id_: NonEmptyStr | None = Field(None, alias='id')
+    lid: NonEmptyStr | None = None
     attributes: dict[str, Any] | None = None
     relationships: dict[str, RelationshipObject] | None = None
     links: dict[str, LinkValue] | None = None
@@ -319,7 +332,7 @@ class ResourceObject(BaseModel):
     def validate_resource_object(self):
         """Validate the ResourceObject according to the JSON:API spec."""
         # Ensure type_ is a string
-        if not isinstance(self.type_, str) and not bool(self.type_):
+        if not isinstance(self.type_, str) or not bool(self.type_):
             raise ValueError("'type' must be a string.")
 
         # Ensure id_ and lid, if present, are strings
@@ -329,7 +342,7 @@ class ResourceObject(BaseModel):
             raise ValueError("'lid' must be a string.")
 
         # Either id or lid must be present
-        if not self.id_ and not self.lid:
+        if (not self.id_ or not bool(self.id_)) and (not self.lid or not bool(self.lid)):
             raise ValueError("ResourceObject must have either 'id' or 'lid'.")
 
         # Ensure no field name conflicts
@@ -425,17 +438,17 @@ class ResourceObject(BaseModel):
         # Generate or retrieve 'lid' if 'id' is not available
         lid = None
         if id_ is None:
-            # Check if the model already has a generated 'lid'
-            if model in lid_registry:
-                lid = lid_registry[model]
+            model_id = id(model)  # Use the unique id of the model instance
+            if model_id in lid_registry:
+                lid = lid_registry[model_id]
             else:
                 # Generate a new 'lid' and store it in the registry
                 lid = str(uuid.uuid4())
-                lid_registry[model] = lid
+                lid_registry[model_id] = lid
 
         return cls(
-            type_=type_,
-            id_=id_,
+            type=type_,
+            id=id_,
             lid=lid,
             attributes=attributes if attributes else None,
             relationships=relationships,
@@ -602,7 +615,7 @@ class Document(BaseModel):
             visited.add(identifier)
             reachable.add(identifier)
 
-            if resource.relationships:
+            if isinstance(resource, ResourceObject) and resource.relationships:
                 for rel in resource.relationships.values():
                     if rel.data:
                         if isinstance(rel.data, list):

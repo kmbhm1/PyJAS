@@ -1,4 +1,6 @@
-from pydantic import ValidationError
+from typing import Any
+from pydantic import BaseModel, HttpUrl, ValidationError
+from pydantic_core import ErrorDetails
 from pyjas.v1_1.jsonapi_builder import (
     validate_member_name,
     ResourceIdentifierObject,
@@ -15,752 +17,1244 @@ from pyjas.v1_1.jsonapi_builder import (
 import pytest
 
 
-# validate_member_name tests
-
-# Define the reserved characters as per the validate_member_name function
-RESERVED_CHARACTERS = set('+.,[]!"#$%&\'()*/:;<=>?@\\^`{|}~\x7f')
-
-
-@pytest.mark.parametrize(
-    'valid_name',
-    [
-        # Core member names
-        'user',
-        'User123',
-        'valid_name',
-        'valid-name',
-        'Valid Name',
-        'ユーザー',  # Unicode characters
-        '名',  # Single Unicode character'
-        # @-Members
-        '@meta',
-        '@custom_member',
-        '@Valid-Name',
-        '@ユーザー',
-        # Names with U+0080 and above
-        'user\u0081',
-        '用户',  # Chinese characters
-        'مستخدم',  # Arabic characters
-    ],
-)
-def test_validate_member_name_valid(valid_name):
-    """Test that valid member names do not raise an exception."""
-    try:
-        validate_member_name(valid_name)
-    except ValueError as e:
-        pytest.fail(f"validate_member_name() raised ValueError unexpectedly for '{valid_name}': {e}")
+def clean_actual_errors(errors: list[ErrorDetails]) -> list[dict]:
+    """Helper function to is_valid_uri up actual errors for comparison."""
+    for e in errors:
+        e.pop('ctx', None)  # Remove 'ctx' as it's not relevant for comparison
+        e.pop('url', None)  # Remove 'url' as it's not relevant for comparison
+    return errors
 
 
-@pytest.mark.parametrize(
-    'invalid_name, error_message',
-    [
-        # Non-string inputs
-        (123, 'Member name must be a string.'),
-        (None, 'Member name must be a string.'),
-        (['list'], 'Member name must be a string.'),
-        ({'key': 'value'}, 'Member name must be a string.'),
-        (True, 'Member name must be a string.'),
-        # Empty string
-        ('', 'Member name must contain at least one character.'),
-        # Names containing reserved characters
-        ('user+', "Invalid member name 'user+' according to JSON:API specification."),
-        ('user.', "Invalid member name 'user.' according to JSON:API specification."),
-        ('user[', "Invalid member name 'user[' according to JSON:API specification."),
-        ('user]', "Invalid member name 'user]' according to JSON:API specification."),
-        ('user"', "Invalid member name 'user\"' according to JSON:API specification."),
-        ('user#', "Invalid member name 'user#' according to JSON:API specification."),
-        ('user$', "Invalid member name 'user$' according to JSON:API specification."),
-        ('user%', "Invalid member name 'user%' according to JSON:API specification."),
-        ('user&', "Invalid member name 'user&' according to JSON:API specification."),
-        ("user'", "Invalid member name 'user'' according to JSON:API specification."),
-        ('user(', "Invalid member name 'user(' according to JSON:API specification."),
-        ('user)', "Invalid member name 'user)' according to JSON:API specification."),
-        ('user*', "Invalid member name 'user*' according to JSON:API specification."),
-        ('user/', "Invalid member name 'user/' according to JSON:API specification."),
-        ('user:', "Invalid member name 'user:' according to JSON:API specification."),
-        ('user;', "Invalid member name 'user;' according to JSON:API specification."),
-        ('user<', "Invalid member name 'user<' according to JSON:API specification."),
-        ('user=', "Invalid member name 'user=' according to JSON:API specification."),
-        ('user>', "Invalid member name 'user>' according to JSON:API specification."),
-        ('user?', "Invalid member name 'user?' according to JSON:API specification."),
-        ('user@', "Invalid member name 'user@' according to JSON:API specification."),
-        ('user\\', "Invalid member name 'user\\' according to JSON:API specification."),
-        ('user^', "Invalid member name 'user^' according to JSON:API specification."),
-        ('user`', "Invalid member name 'user`' according to JSON:API specification."),
-        ('user{', "Invalid member name 'user{' according to JSON:API specification."),
-        ('user|', "Invalid member name 'user|' according to JSON:API specification."),
-        ('user}', "Invalid member name 'user}' according to JSON:API specification."),
-        ('user~', "Invalid member name 'user~' according to JSON:API specification."),
-        ('user\x7f', "Invalid member name 'user\x7f' according to JSON:API specification."),
-        # Invalid patterns
-        ('-user', "Invalid member name '-user' according to JSON:API specification."),
-        ('user-', "Invalid member name 'user-' according to JSON:API specification."),
-        ('@-user', "Invalid member name '@-user' according to JSON:API specification."),
-        ('ns:-member', "Invalid member name 'ns:-member' according to JSON:API specification."),
-        ('ns:member-', "Invalid member name 'ns:member-' according to JSON:API specification."),
-        # Extension Members are not valid member names
-        ('ns:member', "Member name 'ns:member' contains reserved character ':' which is not allowed."),
-        (
-            'namespace:member_name',
-            "Member name 'namespace:member_name' contains reserved character ':' which is not allowed.",
-        ),
-        (
-            'namespace:Invalid-Name',
-            "Member name 'namespace:Invalid-Name' contains reserved character ':' which is not allowed.",
-        ),
-        (
-            '名前空間:メンバー',
-            "Member name '名前空間:メンバー' contains reserved character ':' which is not allowed.",
-        ),  # Namespace and member with Unicode
-        ('@user@', "Invalid member name '@user@' according to JSON:API specification."),
-        (':member', "Invalid member name ':member' according to JSON:API specification."),
-        # Names with multiple reserved characters
-        ('user+name', "Invalid member name 'user+name' according to JSON:API specification."),
-        ('@user:name!', "Invalid member name '@user:name!' according to JSON:API specification."),
-    ],
-)
-def test_validate_member_name_invalid(invalid_name, error_message):
-    """Test that invalid member names raise a ValueError with the correct message."""
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(invalid_name)
-    assert str(exc_info.value) == error_message
+# Document class
 
 
-def test_validate_member_name_reserved_del():
-    """Test that the DEL character (U+007F) is not allowed."""
-    name_with_del = 'user\x7fname'
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(name_with_del)
-    assert str(exc_info.value) == f"Invalid member name '{name_with_del}' according to JSON:API specification."
-
-
-def test_validate_member_name_whitespace():
-    """Test that leading and trailing spaces are handled correctly."""
-    valid_name = ' user '
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(valid_name)
-    assert str(exc_info.value) == f"Invalid member name '{valid_name}' according to JSON:API specification."
-
-
-def test_validate_member_name_only_allowed_special_chars():
-    """Test names that consist solely of allowed internal characters."""
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name('-')
-    assert str(exc_info.value) == "Invalid member name '-' according to JSON:API specification."
-
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name('_')
-    assert str(exc_info.value) == "Invalid member name '_' according to JSON:API specification."
-
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(' ')
-    assert str(exc_info.value) == "Invalid member name ' ' according to JSON:API specification."
-
-
-def test_validate_member_name_unicode_below_u0080():
-    """Test that characters below U+0080 but not in reserved are allowed."""
-    # Characters like accented letters
-    valid_name = 'café'
-    try:
-        validate_member_name(valid_name)
-    except ValueError as e:
-        pytest.fail(f"validate_member_name() raised ValueError unexpectedly for '{valid_name}': {e}")
-
-
-def test_validate_member_name_extension_without_namespace():
-    """Test that extension members must have a namespace."""
-    invalid_name = ':member'
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(invalid_name)
-    assert str(exc_info.value) == f"Invalid member name '{invalid_name}' according to JSON:API specification."
-
-
-def test_validate_member_name_multiple_colons():
-    """Test that multiple colons are not allowed in extension members."""
-    invalid_name = 'ns:subns:member'
-    with pytest.raises(ValueError) as exc_info:
-        validate_member_name(invalid_name)
-    assert str(exc_info.value) == f"Invalid member name '{invalid_name}' according to JSON:API specification."
-
-
-# ResourceIdentifierObject tests
-
-
-@pytest.mark.parametrize(
-    'data',
-    [
-        # Valid instances with 'type' and 'id'
-        {'type': 'articles', 'id': '1'},
-        {'type': 'users', 'id': 'user123'},
-        # Valid instances with 'type' and 'lid'
-        {'type': 'comments', 'lid': 'local-456'},
-        {'type': 'posts', 'lid': 'local-789'},
-        # Valid instances with 'type', 'id', and 'lid'
-        {'type': 'tags', 'id': 'tag1', 'lid': 'local-tag1'},
-        {'type': 'categories', 'id': 'cat123', 'lid': 'local-cat123'},
-        # Valid instances including 'meta'
-        {'type': 'articles', 'id': '1', 'meta': {'created_at': '2024-01-01', 'updated_at': '2024-01-02'}},
-        {'type': 'users', 'lid': 'local-user456', 'meta': {'role': 'admin'}},
-        # Valid instances with Unicode characters
-        {'type': '文章', 'id': '1'},  # "文章" means "article" in Chinese
-        {
-            'type': 'utilisateurs',
-            'lid': 'local-用户789',
-        },  # "utilisateurs" is French for "users", "用户" is Chinese for "user"
-    ],
-)
-def test_resource_identifier_object_valid(data):
-    """Test that valid ResourceIdentifierObject instances are created successfully."""
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.type_ == data['type']
-        assert obj.id_ == data.get('id')
-        assert obj.lid == data.get('lid')
-        assert obj.meta == data.get('meta')
-    except ValidationError as e:
-        pytest.fail(f'ValidationError raised unexpectedly for data {data}: {e}')
-
-
-@pytest.mark.parametrize(
-    'data, error_message',
-    [
-        # Missing both 'id' and 'lid'
-        ({'type': 'articles'}, "ResourceIdentifierObject must have either 'id' or 'lid'."),
-        ({'type': 'users', 'meta': {'role': 'admin'}}, "ResourceIdentifierObject must have either 'id' or 'lid'."),
-        # Non-string 'type'
-        ({'type': 123, 'id': '1'}, "'type' must be a string."),
-        ({'type': None, 'id': '1'}, "'type' must be a string."),
-        ({'type': True, 'lid': 'local-123'}, "'type' must be a string."),
-        # Non-string 'id'
-        ({'type': 'articles', 'id': 456}, "'id' must be a string."),
-        (
-            {'type': 'users', 'id': None},
-            "ResourceIdentifierObject must have either 'id' or 'lid'.",
-        ),  # id is None and lid is missing
-        ({'type': 'comments', 'id': True}, "'id' must be a string."),
-        # Non-string 'lid'
-        ({'type': 'posts', 'lid': 789}, "'lid' must be a string."),
-        ({'type': 'categories', 'lid': False, 'id': 'cat123'}, "'lid' must be a string."),
-        # 'meta' not a dictionary
-        ({'type': 'articles', 'id': '1', 'meta': 'not-a-dict'}, 'value is not a valid dict'),
-        ({'type': 'users', 'lid': 'local-456', 'meta': ['list', 'not', 'dict']}, 'value is not a valid dict'),
-        # Additional invalid cases
-        # ({'type': '', 'id': '1'}, None),  # Empty 'type' is allowed as long as it's a string
-        # ({'type': ' ', 'id': '1'}, None),  # 'type' with space is allowed
-        ({'type': 'articles', 'id': ''}, None),  # Empty 'id' is allowed (depending on specifications)
-        ({'type': 'articles', 'lid': ''}, None),  # Empty 'lid' is allowed (depending on specifications)
-        ({'type': 'articles', 'id': '', 'lid': ''}, "ResourceIdentifierObject must have either 'id' or 'lid'."),
-    ],
-)
-def test_resource_identifier_object_invalid(data, error_message):
-    """Test that invalid ResourceIdentifierObject instances raise ValidationError."""
-    with pytest.raises(ValidationError):
-        ResourceIdentifierObject(**data)
-
-
-def test_resource_identifier_object_meta_optional():
-    """Test that 'meta' is optional."""
-    data = {'type': 'articles', 'id': '1'}
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.meta is None
-    except ValidationError as e:
-        pytest.fail(f'ValidationError raised unexpectedly: {e}')
-
-
-def test_resource_identifier_object_id_and_lid_both_present():
-    """Test that both 'id' and 'lid' can be present."""
-    data = {'type': 'articles', 'id': '1', 'lid': 'local-1', 'meta': {'source': 'internal'}}
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.id_ == '1'
-        assert obj.lid == 'local-1'
-        assert obj.meta == {'source': 'internal'}
-    except ValidationError as e:
-        pytest.fail(f'ValidationError raised unexpectedly: {e}')
-
-
-def test_resource_identifier_object_empty_strings():
-    """Test behavior with empty strings for 'type', 'id', and 'lid'."""
-    # Assuming that empty strings are allowed for 'type', 'id', and 'lid' as long as they are strings
-    # If the specification requires non-empty strings, additional validation should be added
-    data = {'type': '', 'id': '1'}
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.type_ == ''
-        assert obj.id_ == '1'
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for empty 'type': {e}")
-
-    data = {'type': 'articles', 'lid': ''}
-    try:
-        obj = ResourceIdentifierObject(**data)
-    except ValidationError:
-        pass
-    else:
-        pytest.fail("ValidationError expected for empty 'lid'")
-
-
-def test_resource_identifier_object_extra_fields():
-    """Test that extra fields are not allowed unless configured otherwise."""
-    data = {'type': 'articles', 'id': '1', 'extra': 'field'}
-    with pytest.raises(ValidationError) as exc_info:
-        ResourceIdentifierObject(**data)
-    assert 'extra' in str(exc_info.value)
-
-
-def test_resource_identifier_object_alias():
-    """Test that aliases ('type' -> 'type_', 'id' -> 'id_') work correctly."""
-    data = {'type': 'articles', 'id': '1'}
-    obj = ResourceIdentifierObject(**data)
-    assert obj.type_ == 'articles'
-    assert obj.id_ == '1'
-
-    # Test accessing via alias
-    assert obj.model_dump(by_alias=True, exclude_none=True) == data
-
-
-def test_resource_identifier_object_partial_fields():
-    """Test instances with partial fields."""
-    # Only 'type' and 'id'
-    data = {'type': 'articles', 'id': '1'}
-    obj = ResourceIdentifierObject(**data)
-    assert obj.type_ == 'articles'
-    assert obj.id_ == '1'
-    assert obj.lid is None
-    assert obj.meta is None
-
-    # Only 'type' and 'lid'
-    data = {'type': 'articles', 'lid': 'local-1'}
-    obj = ResourceIdentifierObject(**data)
-    assert obj.type_ == 'articles'
-    assert obj.id_ is None
-    assert obj.lid == 'local-1'
-    assert obj.meta is None
-
-    # 'type', 'id', 'lid'
-    data = {'type': 'articles', 'id': '1', 'lid': 'local-1'}
-    obj = ResourceIdentifierObject(**data)
-    assert obj.type_ == 'articles'
-    assert obj.id_ == '1'
-    assert obj.lid == 'local-1'
-    assert obj.meta is None
-
-
-def test_resource_identifier_object_invalid_meta_content():
-    """Test that 'meta' can contain any non-standard meta-information."""
-    # Valid 'meta' with various types of data
-    data = {
-        'type': 'articles',
-        'id': '1',
-        'meta': {
-            'views': 100,
-            'tags': ['python', 'testing'],
-            'published': True,
-            'ratings': {'average': 4.5, 'count': 10},
-        },
-    }
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.meta == data['meta']
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for complex 'meta': {e}")
-
-
-def test_resource_identifier_object_invalid_type_non_string_but_correct():
-    """Test that 'type' is validated as string even with similar types."""
-    data = {'type': '123', 'id': '1'}  # 'type' as numeric string is allowed
-    try:
-        obj = ResourceIdentifierObject(**data)
-        assert obj.type_ == '123'
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for numeric string 'type': {e}")
-
-
-# LinkObject tests
-
-
+# Test cases for the Document class
 @pytest.mark.parametrize(
     'valid_data',
     [
-        # Only required 'href'
-        {'href': 'https://example.com'},
-        {'href': 'http://localhost:8000/api/resource'},
-        # 'href' with all optional fields
+        # Only 'data' with single ResourceObject
+        {'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={})},
+        # Only 'data' with list of ResourceObject
         {
-            'href': 'https://example.com/resource/1',
-            'rel': 'self',
-            'describedby': 'https://example.com/schema/resource',
-            'title': 'Resource Title',
-            'type': 'application/json',
-            'hreflang': 'en',
-            'meta': {'version': '1.0', 'author': 'John Doe'},
+            'data': [
+                ResourceObject(type='articles', id='1', attributes={'title': 'Test Article 1'}),
+                ResourceObject(type='articles', id='2', attributes={'title': 'Test Article 2'}),
+            ]
         },
-        # 'hreflang' as a valid string
-        {'href': 'https://example.com/resource/2', 'hreflang': 'fr'},
-        # 'hreflang' as a list of valid strings
-        {'href': 'https://example.com/resource/3', 'hreflang': ['en', 'es', 'de']},
-        # Unicode characters in fields
+        # Only 'data' with ResourceIdentifierObject
+        {'data': ResourceIdentifierObject(type='articles', id='1')},
+        # Only 'meta'
+        {'meta': {'note': 'This is a meta object.'}},
+        # Only 'jsonapi'
+        {'jsonapi': JSONAPIObject(version='1.1', meta={'api_meta': 'value'})},
+        # Only 'included' with list of ResourceObject
         {
-            'href': 'https://例子.测试',
-            'rel': '自我',
-            'describedby': 'https://例子.测试/架构',
-            'title': '资源标题',
-            'type': '应用/JSON',
-            'hreflang': 'zh',
-            'meta': {'版本': '1.0', '作者': '张三'},
+            'data': ResourceObject(
+                type='articles',
+                id='1',
+                attributes={'title': 'Test Article'},
+                relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9'))},
+            ),
+            'included': [ResourceObject(type='people', id='9', attributes={'name': 'John Doe'})],
+        },
+        # Combination of 'data', 'meta', and 'jsonapi'
+        {
+            'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
+            'meta': {'note': 'Combined document.'},
+            'jsonapi': JSONAPIObject(version='1.1'),
+        },
+        # Combination of 'data' and 'links'
+        {
+            'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
+            'links': {'self': 'https://example.com/document'},
+        },
+        # Combination of 'data', 'included', and 'links'
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='1',
+                attributes={'title': 'Test Article'},
+                relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9'))},
+            ),
+            'included': [ResourceObject(type='people', id='9', attributes={'name': 'John Doe'})],
+            'links': {'self': 'https://example.com/document'},
+        },
+        # 'included' with multiple ResourceObjects
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='1',
+                attributes={'title': 'Test Article'},
+                relationships={
+                    'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9')),
+                    'comments': RelationshipObject(
+                        data=[
+                            ResourceIdentifierObject(type='comments', id='5'),
+                            ResourceIdentifierObject(type='comments', id='6'),
+                        ]
+                    ),
+                },
+            ),
+            'included': [
+                ResourceObject(type='people', id='9', attributes={'name': 'John Doe'}),
+                ResourceObject(type='comments', id='5', attributes={'content': 'Great article!'}),
+                ResourceObject(type='comments', id='6', attributes={'content': 'Thanks for sharing.'}),
+            ],
+        },
+        # Document with extra members allowed by ConfigDict(extra='allow')
+        {
+            'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
+            'custom_member': 'Custom Value',
+            'another_member': {'key': 'value'},
+        },
+        # 'included' with unique resources
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='1',
+                attributes={'title': 'Test Article'},
+                relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9'))},
+            ),
+            'included': [
+                ResourceObject(type='people', id='9', attributes={'name': 'John Doe'}),
+            ],
+        },
+        # 'jsonapi' with default version
+        {'jsonapi': JSONAPIObject()},
+        # 'jsonapi' with allowed version and meta
+        {'jsonapi': JSONAPIObject(version='1.0', meta={'info': 'Version 1.0 meta'})},
+        # 'data' as None with 'meta' present
+        {'data': None, 'meta': {'note': 'Data is None but meta is present.'}},
+        # 'included' with empty list
+        {
+            'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
+            'included': [],
         },
         # 'meta' with various data types
+        {'meta': {'count': 10, 'active': True, 'items': ['item1', 'item2'], 'nested': {'key1': 'value1', 'key2': 2}}},
+        # 'data' as list of ResourceIdentifierObject
         {
-            'href': 'https://example.com/resource/4',
-            'meta': {'count': 10, 'tags': ['python', 'testing'], 'active': True, 'details': {'key': 'value'}},
+            'data': [
+                ResourceIdentifierObject(type='articles', id='1'),
+                ResourceIdentifierObject(type='articles', id='2'),
+            ]
         },
-        # 'hreflang' with complex valid language tags
-        {'href': 'https://example.com/resource/5', 'hreflang': ['en-US', 'pt-BR', 'zh-CN']},
+        # 'data' as empty list
+        {'data': []},
+        # 'errors' as empty list
+        {'errors': []},
+        # 'jsonapi' with additional meta
+        {'jsonapi': JSONAPIObject(version='1.1', meta={'documentation': 'https://example.com/docs'})},
+        # 'included' with complex nested relationships
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='1',
+                attributes={'title': 'Complex Article'},
+                relationships={
+                    'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9')),
+                    'editor': RelationshipObject(data=ResourceIdentifierObject(type='people', id='10')),
+                },
+            ),
+            'included': [
+                ResourceObject(
+                    type='people',
+                    id='9',
+                    attributes={'name': 'John Doe'},
+                    relationships={
+                        'manager': RelationshipObject(data=ResourceIdentifierObject(type='people', id='11'))
+                    },
+                ),
+                ResourceObject(type='people', id='10', attributes={'name': 'Jane Smith'}),
+            ],
+        },
     ],
 )
-def test_link_object_valid(valid_data):
-    """Test that valid LinkObject instances are created successfully."""
+def test_document_valid(valid_data):
+    """Test that valid Document instances are created successfully."""
     try:
-        for k, v in valid_data.items():
-            print(f'{k}: {v} ({type(v)})')
-        obj = LinkObject(**valid_data)
-        assert obj.href == valid_data['href']
-        assert obj.rel == valid_data.get('rel')
-        assert obj.describedby == valid_data.get('describedby')
-        assert obj.title == valid_data.get('title')
-        assert obj.type_ == valid_data.get('type')
-        assert obj.hreflang == valid_data.get('hreflang')
-        assert obj.meta == valid_data.get('meta')
+        doc = Document(**{**valid_data})
+
+        # Assert 'data' field
+        if 'data' in valid_data:
+            assert doc.data == valid_data['data']
+        else:
+            assert doc.data is None
+
+        # Assert 'errors' field
+        if 'errors' in valid_data:
+            assert doc.errors == valid_data['errors']
+        else:
+            assert doc.errors is None
+
+        # Assert 'meta' field
+        if 'meta' in valid_data:
+            assert doc.meta == valid_data['meta']
+        else:
+            assert doc.meta is None
+
+        # Assert 'jsonapi' field
+        if 'jsonapi' in valid_data:
+            assert doc.jsonapi == valid_data['jsonapi']
+        else:
+            assert doc.jsonapi is None
+
+        # Assert 'links' field
+        if 'links' in valid_data:
+            assert doc.links == valid_data['links']
+        else:
+            assert doc.links is None
+
+        # Assert 'included' field
+        if 'included' in valid_data:
+            assert doc.included == valid_data['included']
+        else:
+            assert doc.included is None
+
+        # Assert extra members
+        extra_members = set(valid_data.keys()) - {'data', 'errors', 'meta', 'jsonapi', 'links', 'included'}
+        for member in extra_members:
+            assert getattr(doc, member) == valid_data[member]
+
     except ValidationError as e:
         pytest.fail(f'ValidationError raised unexpectedly for data {valid_data}: {e}')
 
 
 @pytest.mark.parametrize(
-    'invalid_data, expected_errors',
+    'invalid_data, expected_error_messages',
     [
-        # Missing required 'href'
-        ({}, [{'loc': ('href',), 'msg': 'field required', 'type': 'value_error.missing'}]),
-        # 'href' as invalid URL
+        # Missing 'data' but including 'included'
         (
-            {'href': 'not-a-valid-url'},
-            [{'loc': ('href',), 'msg': 'invalid or missing URL scheme', 'type': 'value_error.url.scheme'}],
+            {'included': [ResourceObject(type='people', id='9', attributes={'name': 'John Doe'})]},
+            ["Value error, A document MUST contain at least one of 'data', 'errors', 'meta', or 'jsonapi'."],
         ),
-        # 'describedby' as invalid URL
+        # 'included' with duplicate resources
         (
-            {'href': 'https://example.com', 'describedby': 'invalid-url'},
-            [{'loc': ('describedby',), 'msg': 'invalid or missing URL scheme', 'type': 'value_error.url.scheme'}],
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='1',
+                    attributes={'title': 'Duplicate Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='9', attributes={'name': 'John Doe'}),
+                    ResourceObject(type='people', id='9', attributes={'name': 'John Doe Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='9' or lid='None'."],
         ),
-        # 'rel' as non-string
+        # 'included' with resources not linked from 'data'
         (
-            {'href': 'https://example.com', 'rel': 123},
-            [{'loc': ('rel',), 'msg': 'str type expected', 'type': 'type_error.str'}],
+            {
+                'data': ResourceObject(
+                    type='articles', id='1', attributes={'title': 'Unlinked Article'}, relationships={}
+                ),
+                'included': [ResourceObject(type='people', id='10', attributes={'name': 'Jane Smith'})],
+            },
+            ["Included resources are not reachable from primary data: {('people', '10')}"],
         ),
-        # 'rel' with non-alphanumeric characters
+        # Document with 'links' containing invalid keys
         (
-            {'href': 'https://example.com', 'rel': 'self-link'},
-            [
-                {
-                    'loc': ('rel',),
-                    'msg': "'rel' must be a valid link relation type (alphanumeric characters only).",
-                    'type': 'value_error',
-                }
-            ],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'links': {'invalid_link': 'https://example.com/document'},
+            },
+            ["Value error, Invalid link key 'invalid_link' in Document."],
         ),
-        # 'type_' as non-string
+        # Document with 'links' containing invalid link values
         (
-            {'href': 'https://example.com', 'type': 456},
-            [{'loc': ('type_',), 'msg': 'str type expected', 'type': 'type_error.str'}],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'links': {
+                    'self': 12345  # Invalid type
+                },
+            },
+            ['Input should be a valid list'],
         ),
-        # 'hreflang' as invalid string
+        # Document with 'links' containing invalid URI string
         (
-            {'href': 'https://example.com', 'hreflang': 'invalid-lang-tag'},
-            [
-                {
-                    'loc': ('hreflang',),
-                    'msg': "'hreflang' must be a valid language tag. Got: invalid-lang-tag",
-                    'type': 'value_error',
-                }
-            ],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'links': {'self': 'invalid-uri'},
+            },
+            ['Input should be a valid dictionary or instance of ResourceObject'],
         ),
-        # 'hreflang' as list containing invalid string
+        # 'included' with 'included' resources not linked from 'data'
         (
-            {'href': 'https://example.com', 'hreflang': ['en', 'invalid-lang-tag']},
-            [
-                {
-                    'loc': ('hreflang',),
-                    'msg': "'hreflang' must be a valid language tag. Got: invalid-lang-tag",
-                    'type': 'value_error',
-                }
-            ],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Main Article'}, relationships={}),
+                'included': [ResourceObject(type='people', id='11', attributes={'name': 'Unlinked Person'})],
+            },
+            ["Included resources are not reachable from primary data: {('people', '11')}"],
         ),
-        # 'hreflang' as list containing non-string
+        # 'included' with invalid ResourceObject
         (
-            {'href': 'https://example.com', 'hreflang': ['en', 123]},
-            [
-                {
-                    'loc': ('hreflang', 1),
-                    'msg': "Each 'hreflang' entry must be a string. Got: 123",
-                    'type': 'value_error',
-                }
-            ],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
+                'included': ['invalid-included-resource'],
+            },
+            ["All items in 'included' must be 'ResourceObject' instances."],
         ),
-        # 'hreflang' as unsupported type
+        # 'included' not a list
         (
-            {'href': 'https://example.com', 'hreflang': {'lang': 'en'}},
-            [{'loc': ('hreflang',), 'msg': "'hreflang' must be a string or a list of strings.", 'type': 'value_error'}],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'included': 'not-a-list',
+            },
+            ['Input should be a valid list'],
         ),
-        # 'meta' as non-dictionary
+        # Extra members with invalid names
         (
-            {'href': 'https://example.com', 'meta': 'not-a-dict'},
-            [{'loc': ('meta',), 'msg': 'value is not a valid dict', 'type': 'type_error.dict'}],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'invalid-member!': 'Invalid Value',
+            },
+            ["Invalid member name 'invalid-member!' according to JSON:API specification."],
         ),
-        # 'title' as non-string
+        # Document missing 'jsonapi' but including extra members that require validation
         (
-            {'href': 'https://example.com', 'title': 789},
-            [{'loc': ('title',), 'msg': 'str type expected', 'type': 'type_error.str'}],
+            {
+                'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
+                'another_invalid!': 'Invalid',
+            },
+            ["Invalid member name 'another_invalid!' according to JSON:API specification."],
         ),
-        # 'hreflang' as empty list
+        # 'data' as list containing invalid types
         (
-            {'href': 'https://example.com', 'hreflang': []},
-            [{'loc': ('hreflang',), 'msg': "'hreflang' must be a valid language tag. Got: ", 'type': 'value_error'}],
+            {
+                'data': [
+                    ResourceObject(type='articles', id='1', attributes={'title': 'Valid Article'}),
+                    'invalid-data-item',
+                ]
+            },
+            ["All items in 'data' must be 'ResourceObject' or 'ResourceIdentifierObject' instances."],
         ),
-        # 'hreflang' as empty string
+        # 'data' as invalid type (not ResourceObject or ResourceIdentifierObject or list)
         (
-            {'href': 'https://example.com', 'hreflang': ''},
-            [{'loc': ('hreflang',), 'msg': "'hreflang' must be a valid language tag. Got: ", 'type': 'value_error'}],
+            {'data': 'invalid-data-type'},
+            ["'data' must be a 'ResourceObject', 'ResourceIdentifierObject', or a list of them."],
         ),
-        # 'hreflang' as list with empty string
+        # 'included' with duplicate resources by 'lid'
         (
-            {'href': 'https://example.com', 'hreflang': ['en', '']},
-            [{'loc': ('hreflang', 1), 'msg': "'hreflang' must be a valid language tag. Got: ", 'type': 'value_error'}],
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='1',
+                    attributes={'title': 'Duplicate LID Article'},
+                    relationships={
+                        'author': RelationshipObject(data=ResourceIdentifierObject(type='people', lid='local-1'))
+                    },
+                ),
+                'included': [
+                    ResourceObject(type='people', lid='local-1', attributes={'name': 'John Doe'}),
+                    ResourceObject(type='people', lid='local-1', attributes={'name': 'Jane Smith'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='None' or lid='local-1'."],
         ),
-        # 'meta' as list instead of dict
+        # 'included' with resources not unique by type and id/lid
         (
-            {'href': 'https://example.com', 'meta': ['not', 'a', 'dict']},
-            [{'loc': ('meta',), 'msg': 'value is not a valid dict', 'type': 'type_error.dict'}],
-        ),
-        # Extra unexpected field
-        (
-            {'href': 'https://example.com', 'extra': 'field'},
-            [{'loc': ('extra',), 'msg': 'extra fields not permitted', 'type': 'value_error.extra'}],
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='1',
+                    attributes={'title': 'Unique Included Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='9'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='9', attributes={'name': 'John Doe'}),
+                    ResourceObject(type='people', id='9', attributes={'name': 'John Doe Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='9' or lid='None'."],
         ),
     ],
 )
-def test_link_object_invalid(invalid_data, expected_errors):
-    """Test that invalid LinkObject instances raise ValidationError with correct messages."""
+def test_document_invalid(invalid_data, expected_error_messages):
+    """Test that invalid Document instances raise ValidationError with correct messages."""
     with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**invalid_data)
+        Document(**invalid_data)
 
     # Extract actual errors
     actual_errors = exc_info.value.errors()
 
-    # Check each expected error is in actual errors
+    # Flatten expected_error_messages if they are strings
+    expected_errors = (
+        expected_error_messages if isinstance(expected_error_messages, list) else [expected_error_messages]
+    )
+
     for expected_error in expected_errors:
-        assert expected_error in actual_errors, f'Expected error {expected_error} not found in {actual_errors}'
+        # Check if any of the actual errors contain the expected error message
+        assert any(
+            expected_error in error['msg'] for error in actual_errors
+        ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
 
 
-def test_link_object_meta_optional():
-    """Test that 'meta' is optional."""
-    data = {'href': 'https://example.com/resource'}
+@pytest.mark.parametrize(
+    'valid_data',
+    [
+        # 'data' as single ResourceObject
+        {
+            'data': ResourceObject(
+                type='articles', id='2', attributes={'title': 'Another Test Article'}, relationships={}
+            )
+        },
+        # 'data' as list of ResourceIdentifierObject
+        {
+            'data': [
+                ResourceIdentifierObject(type='articles', id='3'),
+                ResourceIdentifierObject(type='articles', id='4'),
+            ]
+        },
+        # 'jsonapi' with meta
+        {'jsonapi': JSONAPIObject(version='1.1', meta={'api_meta': 'value'})},
+        # 'included' with multiple ResourceObjects correctly linked
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='5',
+                attributes={'title': 'Linked Article'},
+                relationships={
+                    'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='12')),
+                    'comments': RelationshipObject(
+                        data=[
+                            ResourceIdentifierObject(type='comments', id='7'),
+                            ResourceIdentifierObject(type='comments', id='8'),
+                        ]
+                    ),
+                },
+            ),
+            'included': [
+                ResourceObject(type='people', id='12', attributes={'name': 'Alice Wonderland'}),
+                ResourceObject(type='comments', id='7', attributes={'content': 'Great read!'}),
+                ResourceObject(type='comments', id='8', attributes={'content': 'Very informative.'}),
+            ],
+        },
+        # 'meta' with nested structures
+        {
+            'meta': {
+                'analytics': {'page_views': 1500, 'unique_visitors': 1200},
+                'preferences': {'theme': 'dark', 'notifications': True},
+            }
+        },
+        # Combination of 'data', 'included', 'links', and 'jsonapi'
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='6',
+                attributes={'title': 'Comprehensive Test Article'},
+                relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='13'))},
+            ),
+            'included': [ResourceObject(type='people', id='13', attributes={'name': 'Bob Builder'})],
+            'links': {'self': 'https://example.com/document/6', 'related': 'https://example.com/related/6'},
+            'jsonapi': JSONAPIObject(version='1.0', meta={'documentation': 'https://example.com/docs'}),
+        },
+        # 'data' as list with mixed ResourceObject and ResourceIdentifierObject
+        # {
+        #     'data': [
+        #         ResourceObject(type='articles', id='7', attributes={'title': 'Mixed Data Article'}),
+        #         ResourceIdentifierObject(type='people', id='14'),
+        #     ]
+        # },
+        # 'included' with linked resources via 'lid'
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='8',
+                attributes={'title': 'LID Linked Article'},
+                relationships={
+                    'editor': RelationshipObject(data=ResourceIdentifierObject(type='people', lid='local-14'))
+                },
+            ),
+            'included': [ResourceObject(type='people', lid='local-14', attributes={'name': 'Charlie Chocolate'})],
+        },
+        # 'included' with nested relationships
+        {
+            'data': ResourceObject(
+                type='projects',
+                id='9',
+                attributes={'name': 'Project X'},
+                relationships={'leader': RelationshipObject(data=ResourceIdentifierObject(type='people', id='15'))},
+            ),
+            'included': [
+                ResourceObject(
+                    type='people',
+                    id='15',
+                    attributes={'name': 'Dana Scully'},
+                    relationships={
+                        'department': RelationshipObject(data=ResourceIdentifierObject(type='departments', id='3'))
+                    },
+                ),
+            ],
+        },
+        # 'included' with unique lid
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='10',
+                attributes={'title': 'LID Unique Article'},
+                relationships={
+                    'author': RelationshipObject(data=ResourceIdentifierObject(type='people', lid='local-15'))
+                },
+            ),
+            'included': [ResourceObject(type='people', lid='local-15', attributes={'name': 'Eve Online'})],
+        },
+    ],
+)
+def test_document_additional_valid_cases(valid_data):
+    """Test additional valid Document instances."""
     try:
-        obj = LinkObject(**data)
-        assert obj.meta is None
+        doc = Document(**valid_data)
+
+        # Assert 'data' field
+        if 'data' in valid_data:
+            assert doc.data == valid_data['data']
+        else:
+            assert doc.data is None
+
+        # Assert 'errors' field
+        if 'errors' in valid_data:
+            assert doc.errors == valid_data['errors']
+        else:
+            assert doc.errors is None
+
+        # Assert 'meta' field
+        if 'meta' in valid_data:
+            assert doc.meta == valid_data['meta']
+        else:
+            assert doc.meta is None
+
+        # Assert 'jsonapi' field
+        if 'jsonapi' in valid_data:
+            assert doc.jsonapi == valid_data['jsonapi']
+        else:
+            assert doc.jsonapi is None
+
+        # Assert 'links' field
+        if 'links' in valid_data:
+            assert doc.links == valid_data['links']
+        else:
+            assert doc.links is None
+
+        # Assert 'included' field
+        if 'included' in valid_data:
+            assert doc.included == valid_data['included']
+        else:
+            assert doc.included is None
+
+        # Assert extra members
+        extra_members = set(valid_data.keys()) - {'data', 'errors', 'meta', 'jsonapi', 'links', 'included'}
+        for member in extra_members:
+            assert getattr(doc, member) == valid_data[member]
+
     except ValidationError as e:
-        pytest.fail(f'ValidationError raised unexpectedly: {e}')
+        pytest.fail(f'ValidationError raised unexpectedly for additional valid data {valid_data}: {e}')
 
 
-def test_link_object_alias():
-    """Test that alias 'type_' works correctly."""
-    data = {'href': 'https://example.com/resource', 'type': 'application/json'}
-    obj = LinkObject(**data)
-    assert obj.type_ == 'application/json'
-    # Test accessing via alias in dict
-    assert obj.dict(by_alias=True)['type'] == 'application/json'
-
-
-def test_link_object_extra_fields():
-    """Test that extra fields are not allowed unless configured otherwise."""
-    data = {'href': 'https://example.com/resource', 'rel': 'self', 'unknown_field': 'should fail'}
+@pytest.mark.parametrize(
+    'invalid_data, expected_error_messages',
+    [
+        # Missing all of 'data', 'errors', 'meta', 'jsonapi'
+        ({}, ["A document MUST contain at least one of 'data', 'errors', 'meta', or 'jsonapi'."]),
+        # Missing 'data' but including 'included'
+        (
+            {'included': [ResourceObject(type='people', id='9', attributes={'name': 'John Doe'})]},
+            ["A document MUST contain at least one of 'data', 'errors', 'meta', or 'jsonapi'."],
+        ),
+        # 'included' with duplicate resources by 'id'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='2',
+                    attributes={'title': 'Duplicate ID Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='16'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='16', attributes={'name': 'Frank Ocean'}),
+                    ResourceObject(type='people', id='16', attributes={'name': 'Frank Ocean Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='16' or lid='None'."],
+        ),
+        # 'included' with duplicate resources by 'lid'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='3',
+                    attributes={'title': 'Duplicate LID Article'},
+                    relationships={
+                        'editor': RelationshipObject(data=ResourceIdentifierObject(type='people', lid='local-17'))
+                    },
+                ),
+                'included': [
+                    ResourceObject(type='people', lid='local-17', attributes={'name': 'Grace Hopper'}),
+                    ResourceObject(type='people', lid='local-17', attributes={'name': 'Grace Hopper Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='None' or lid='local-17'."],
+        ),
+        # 'included' with resources not linked from 'data'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='4', attributes={'title': 'Unlinked Included Article'}, relationships={}
+                ),
+                'included': [ResourceObject(type='people', id='18', attributes={'name': 'Hank Pym'})],
+            },
+            ["Included resources are not reachable from primary data: {('people', '18')}"],
+        ),
+        # 'included' not a list
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='5', attributes={'title': 'Invalid Included Article'}, relationships={}
+                ),
+                'included': 'not-a-list',
+            },
+            ['Input should be a valid list'],
+        ),
+        # 'included' with invalid ResourceObject
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='6', attributes={'title': 'Invalid Included Article'}, relationships={}
+                ),
+                'included': ['invalid-included-resource'],
+            },
+            ['Input should be a valid dictionary'],
+        ),
+        # Document with 'links' containing invalid keys
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='8', attributes={'title': 'Invalid Links Article'}, relationships={}
+                ),
+                'links': {'invalid_link': 'https://example.com/document/8'},
+            },
+            ["Invalid link key 'invalid_link' in Document."],
+        ),
+        # Document with 'links' containing invalid link values
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='9', attributes={'title': 'Invalid Link Values Article'}, relationships={}
+                ),
+                'links': {
+                    'self': 12345  # Invalid type
+                },
+            },
+            ['Input should be a valid string'],
+        ),
+        # Document with 'links' containing invalid URI string
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='10', attributes={'title': 'Invalid URI Links Article'}, relationships={}
+                ),
+                'links': {'self': 'invalid-uri'},
+            },
+            ["Link 'self' must be a valid URI-reference."],
+        ),
+        # Document with extra members having invalid names
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='12', attributes={'title': 'Extra Members Article'}, relationships={}
+                ),
+                'invalid_member!': 'Invalid Value',
+            },
+            ["Invalid member name 'invalid_member!' according to JSON:API specification."],
+        ),
+        # Document with 'meta' as non-dictionary
+        ({'meta': 'not-a-dict'}, ['Input should be a valid dictionary']),
+        # Document with 'errors' as non-list
+        ({'errors': 'not-a-list'}, ['Input should be a valid list']),
+        # Document with 'data' as invalid type
+        (
+            {'data': 'invalid-data-type'},
+            ['Input should be a valid dictionary or instance of ResourceObject'],
+        ),
+        # Document with 'included' containing invalid types
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='13',
+                    attributes={'title': 'Included Invalid Types Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='19'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='19', attributes={'name': 'Ivy League'}),
+                    'invalid-included-resource',
+                ],
+            },
+            ['Input should be a valid dictionary or instance of ResourceObject'],
+        ),
+        # 'included' with resources not unique by type and id/lid
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='14',
+                    attributes={'title': 'Unique Included Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='20'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='20', attributes={'name': 'Jack Sparrow'}),
+                    ResourceObject(type='people', id='20', attributes={'name': 'Jack Sparrow Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='20' or lid='None'."],
+        ),
+    ],
+)
+def test_document_invalid(invalid_data, expected_error_messages):
+    """Test that invalid Document instances raise ValidationError with correct messages."""
     with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
+        Document(**invalid_data)
+
+    # Extract actual errors
+    actual_errors = exc_info.value.errors()
+
+    # Flatten expected_error_messages if they are strings
+    expected_errors = (
+        expected_error_messages if isinstance(expected_error_messages, list) else [expected_error_messages]
+    )
+
+    for expected_error in expected_errors:
+        # Check if any of the actual errors contain the expected error message
+        assert any(
+            expected_error in error['msg'] for error in actual_errors
+        ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
+
+
+@pytest.mark.parametrize(
+    'valid_data',
+    [
+        # 'data' as single ResourceObject with nested relationships
+        {
+            'data': ResourceObject(
+                type='articles',
+                id='15',
+                attributes={'title': 'Nested Relationships Article'},
+                relationships={
+                    'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='21')),
+                    'editor': RelationshipObject(data=ResourceIdentifierObject(type='people', id='22')),
+                },
+            ),
+            'included': [
+                ResourceObject(type='people', id='21', attributes={'name': 'Karen Page'}),
+                ResourceObject(type='people', id='22', attributes={'name': 'Luke Cage'}),
+            ],
+        },
+        # Document with all possible fields
+        {
+            'data': ResourceObject(
+                type='projects',
+                id='17',
+                attributes={'name': 'Project Omega'},
+                relationships={'manager': RelationshipObject(data=ResourceIdentifierObject(type='people', id='24'))},
+            ),
+            'errors': None,  # 'errors' can be None
+            'meta': {'created_at': '2024-04-01', 'updated_at': '2024-04-15'},
+            'jsonapi': JSONAPIObject(version='1.1', meta={'documentation': 'https://example.com/docs'}),
+            'links': {'self': 'https://example.com/projects/17'},
+            'included': [ResourceObject(type='people', id='24', attributes={'name': 'Ned Stark'})],
+        },
+        # Document with 'data' as None and 'meta' present
+        {'data': None, 'meta': {'info': 'No primary data, but meta is present.'}},
+        # Document with 'data' as empty list
+        {'data': []},
+        # Document with 'errors' as empty list
+        {'errors': []},
+        # Document with 'included' as empty list and 'data' present
+        {
+            'data': ResourceObject(type='articles', id='18', attributes={'title': 'Included Empty Article'}),
+            'included': [],
+        },
+    ],
+)
+def test_document_additional_valid_cases_2(valid_data):
+    """Test additional valid Document instances with various field combinations."""
+    try:
+        doc = Document(**valid_data)
+
+        # Assert 'data' field
+        if 'data' in valid_data:
+            assert doc.data == valid_data['data']
+        else:
+            assert doc.data is None
+
+        # Assert 'errors' field
+        if 'errors' in valid_data:
+            assert doc.errors == valid_data['errors']
+        else:
+            assert doc.errors is None
+
+        # Assert 'meta' field
+        if 'meta' in valid_data:
+            assert doc.meta == valid_data['meta']
+        else:
+            assert doc.meta is None
+
+        # Assert 'jsonapi' field
+        if 'jsonapi' in valid_data:
+            assert doc.jsonapi == valid_data['jsonapi']
+        else:
+            assert doc.jsonapi is None
+
+        # Assert 'links' field
+        if 'links' in valid_data:
+            assert doc.links == valid_data['links']
+        else:
+            assert doc.links is None
+
+        # Assert 'included' field
+        if 'included' in valid_data:
+            assert doc.included == valid_data['included']
+        else:
+            assert doc.included is None
+
+        # Assert extra members
+        extra_members = set(valid_data.keys()) - {'data', 'errors', 'meta', 'jsonapi', 'links', 'included'}
+        for member in extra_members:
+            assert getattr(doc, member) == valid_data[member]
+
+    except ValidationError as e:
+        pytest.fail(f'ValidationError raised unexpectedly for additional valid data {valid_data}: {e}')
+
+
+@pytest.mark.parametrize(
+    'invalid_data, expected_error_messages',
+    [
+        # 'data' as list containing invalid types
+        (
+            {
+                'data': [
+                    ResourceObject(type='articles', id='19', attributes={'title': 'Valid Article'}),
+                    'invalid-data-item',
+                ]
+            },
+            ['Input should be a valid dictionary or instance of ResourceObject'],
+        ),
+        # 'included' with duplicate resources by 'type' and 'id'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='20',
+                    attributes={'title': 'Duplicate Included Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='25'))},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='25', attributes={'name': 'Peter Parker'}),
+                    ResourceObject(type='people', id='25', attributes={'name': 'Peter Parker Duplicate'}),
+                ],
+            },
+            ["Duplicate resource in 'included': type='people', id='25' or lid='None'."],
+        ),
+        # 'included' with ResourceObject missing 'id' and 'lid'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='21',
+                    attributes={'title': 'Included Missing ID Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='26'))},
+                ),
+                'included': [ResourceObject(type='people', id='1', attributes={'name': 'Quentin Tarantino'})],
+            },
+            ['Value error, Included resources are not reachable from primary data'],
+        ),
+        # Document with 'meta' as non-dictionary
+        ({'meta': 'invalid-meta'}, ['Input should be a valid dictionary']),
+        # Document with 'errors' as non-list
+        ({'errors': 'invalid-errors'}, ['Input should be a valid list']),
+        # Document with 'included' containing non-ResourceObject items
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='25',
+                    attributes={'title': 'Included Non-ResourceObject Article'},
+                    relationships={},
+                ),
+                'included': [
+                    ResourceObject(type='people', id='27', attributes={'name': 'Rachel Green'}),
+                    'invalid-included-resource',
+                ],
+            },
+            ['Input should be a valid dictionary or instance of ResourceObject'],
+        ),
+        # Document with 'included' not linked to 'data'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='27',
+                    attributes={'title': 'Unlinked Included Resources Article'},
+                    relationships={},
+                ),
+                'included': [ResourceObject(type='people', id='29', attributes={'name': 'Tony Stark'})],
+            },
+            ["Included resources are not reachable from primary data: {('people', '29')}"],
+        ),
+        # Document with 'links' containing unsupported keys
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='28', attributes={'title': 'Unsupported Links Article'}, relationships={}
+                ),
+                'links': {
+                    'pagination': 'https://example.com/document/pagination'  # Unsupported key
+                },
+            },
+            ["Value error, Invalid link key 'pagination' in Document."],
+        ),
+        # Document with 'included' containing resources without 'id' and 'lid'
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='29',
+                    attributes={'title': 'Included Resources Missing ID Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='30'))},
+                ),
+                'included': [ResourceObject(type='people', id='67', attributes={'name': 'Uma Thurman'})],
+            },
+            ['Value error, Included resources are not reachable from primary data'],
+        ),
+    ],
+)
+def test_document_invalid_cases(invalid_data, expected_error_messages):
+    """Test that invalid Document instances raise ValidationError with correct messages."""
+    with pytest.raises(ValidationError) as exc_info:
+        Document(**invalid_data)
+
+    # Extract actual errors
+    actual_errors = exc_info.value.errors()
+
+    # Flatten expected_error_messages if they are strings
+    expected_errors = (
+        expected_error_messages if isinstance(expected_error_messages, list) else [expected_error_messages]
+    )
+
+    for expected_error in expected_errors:
+        # Check if any of the actual errors contain the expected error message
+        assert any(
+            expected_error in error['msg'] for error in actual_errors
+        ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
+
+
+@pytest.mark.parametrize(
+    'valid_data',
+    [
+        # Document with 'data' and extra members
+        {
+            'data': ResourceObject(
+                type='articles', id='30', attributes={'title': 'Extra Members Article'}, relationships={}
+            ),
+            'extra_field1': 'Extra Value 1',
+            'extra_field2': {'key': 'Extra Value 2'},
+        },
+        # Document with 'jsonapi' and extra members
+        {'jsonapi': JSONAPIObject(version='1.1', meta={'doc_meta': 'some value'}), 'custom_member': 'Custom Value'},
+        # Document with all fields and multiple extra members
+        {
+            'data': ResourceObject(
+                type='articles', id='31', attributes={'title': 'Full Featured Article'}, relationships={}
+            ),
+            'meta': {'note': 'Full document.'},
+            'jsonapi': JSONAPIObject(version='1.0'),
+            'links': {'self': 'https://example.com/document/31'},
+            'included': [],
+            'extra1': 'Extra1',
+            'extra2': 'Extra2',
+        },
+    ],
+)
+def test_document_with_extra_members(valid_data):
+    """Test that Document accepts extra members with valid names."""
+    try:
+        doc = Document(**valid_data)
+
+        # Assert 'data' field
+        if 'data' in valid_data:
+            assert doc.data == valid_data['data']
+        else:
+            assert doc.data is None
+
+        # Assert 'errors' field
+        if 'errors' in valid_data:
+            assert doc.errors == valid_data['errors']
+        else:
+            assert doc.errors is None
+
+        # Assert 'meta' field
+        if 'meta' in valid_data:
+            assert doc.meta == valid_data['meta']
+        else:
+            assert doc.meta is None
+
+        # Assert 'jsonapi' field
+        if 'jsonapi' in valid_data:
+            assert doc.jsonapi == valid_data['jsonapi']
+        else:
+            assert doc.jsonapi is None
+
+        # Assert 'links' field
+        if 'links' in valid_data:
+            assert doc.links == valid_data['links']
+        else:
+            assert doc.links is None
+
+        # Assert 'included' field
+        if 'included' in valid_data:
+            assert doc.included == valid_data['included']
+        else:
+            assert doc.included is None
+
+        # Assert extra members
+        extra_members = set(valid_data.keys()) - {'data', 'errors', 'meta', 'jsonapi', 'links', 'included'}
+        for member in extra_members:
+            assert getattr(doc, member) == valid_data[member]
+
+    except ValidationError as e:
+        pytest.fail(f'ValidationError raised unexpectedly for data with extra members {valid_data}: {e}')
+
+
+@pytest.mark.parametrize(
+    'invalid_data, expected_error_messages',
+    [
+        # Document with extra members having invalid names
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='32', attributes={'title': 'Invalid Extra Members Article'}, relationships={}
+                ),
+                'invalid_member!': 'Invalid Value',
+            },
+            ["Invalid member name 'invalid_member!' according to JSON:API specification."],
+        ),
+        # Document with 'data' and 'included' but 'included' not linked
+        (
+            {
+                'data': ResourceObject(
+                    type='articles', id='33', attributes={'title': 'Unlinked Included Article'}, relationships={}
+                ),
+                'included': [ResourceObject(type='people', id='34', attributes={'name': 'Victor Stone'})],
+                'extra_invalid_field': 'Invalid',
+            },
+            ['Value error, Included resources are not reachable from primary data:'],
+        ),
+        # Document with 'included' containing invalid member names
+        (
+            {
+                'data': ResourceObject(
+                    type='articles',
+                    id='35',
+                    attributes={'title': 'Included Invalid Member Names Article'},
+                    relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='35'))},
+                ),
+                'included': [
+                    ResourceObject(
+                        type='people',
+                        id='35',
+                        attributes={'name': 'Walter White'},
+                        relationships={
+                            'invalid_relationship!': RelationshipObject(
+                                data=ResourceIdentifierObject(type='departments', id='4')
+                            )
+                        },
+                    )
+                ],
+                'invalid_member@': 'Invalid',
+            },
+            [
+                "Value error, Invalid member name 'invalid_member@'",
+            ],
+        ),
+    ],
+)
+def test_document_invalid_extra_members(invalid_data, expected_error_messages):
+    """Test that Document rejects extra members with invalid names."""
+    with pytest.raises(ValidationError) as exc_info:
+        Document(**invalid_data)
+
+    actual_errors = exc_info.value.errors()
+    expected_errors = (
+        expected_error_messages if isinstance(expected_error_messages, list) else [expected_error_messages]
+    )
+
+    for expected_error in expected_errors:
+        # Check if any of the actual errors contain the expected error message
+        assert any(
+            expected_error in error['msg'] for error in actual_errors
+        ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
+
+
+def test_document_validate_document_relationships_and_included():
+    """Test that all included resources are reachable from primary data."""
+    # Create a data ResourceObject with relationships pointing to included resources
+    data = ResourceObject(
+        type='articles',
+        id='38',
+        attributes={'title': 'Reachable Included Article'},
+        relationships={
+            'author': RelationshipObject(data=ResourceIdentifierObject(type='people', id='39')),
+            'comments': RelationshipObject(
+                data=[
+                    ResourceIdentifierObject(type='comments', id='40'),
+                    ResourceIdentifierObject(type='comments', id='41'),
+                ]
+            ),
+        },
+    )
+
+    # Create included ResourceObjects that are linked
+    included = [
+        ResourceObject(type='people', id='39', attributes={'name': 'Yvonne Strahovski'}),
+        ResourceObject(type='comments', id='40', attributes={'content': 'Great article!'}),
+        ResourceObject(type='comments', id='41', attributes={'content': 'Very informative.'}),
+    ]
+
+    # Valid document
+    valid_document = {'data': data, 'included': included}
+
+    try:
+        doc = Document(**valid_document)
+        assert doc.data == data
+        assert doc.included == included
+    except ValidationError as e:
+        pytest.fail(f'ValidationError raised unexpectedly for reachable included resources: {e}')
+
+    # Invalid document: included resource not linked from data
+    invalid_document = {
+        'data': data,
+        'included': included + [ResourceObject(type='people', id='42', attributes={'name': 'Zachary Levi'})],
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        Document(**invalid_document)
+
+    actual_errors = exc_info.value.errors()
+    expected_error = "Included resources are not reachable from primary data: {('people', '42')}"
     assert any(
-        error['loc'] == ('unknown_field',) for error in exc_info.value.errors()
-    ), 'Expected error for unknown_field not found.'
+        expected_error in error['msg'] for error in actual_errors
+    ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
 
 
-def test_link_object_empty_strings():
-    """Test behavior with empty strings for optional fields."""
-    data = {
-        'href': 'https://example.com/resource',
-        'rel': '',
-        'title': '',
-        'type': '',
-        'hreflang': '',
-    }
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
+def test_document_validate_document_data_as_none_with_meta():
+    """Test that 'data' can be None if 'meta' or 'jsonapi' is present."""
+    valid_data = {'data': None, 'meta': {'info': 'Data is None, but meta is present.'}}
 
-    # Check for 'rel' being empty but still a valid alphanumeric string (empty string may fail)
-    # Depending on implementation, empty string might fail alphanumeric check
-    expected_error = {
-        'loc': ('rel',),
-        'msg': "'rel' must be a valid link relation type (alphanumeric characters only). Got: ",
-        'type': 'value_error',
-    }
-    assert expected_error in exc_info.value.errors(), "Expected error for empty 'rel' not found."
-
-
-def test_link_object_valid_hreflang_complex_tags():
-    """Test 'hreflang' with complex valid language tags."""
-    data = {'href': 'https://example.com/resource', 'hreflang': ['en-US', 'pt-BR', 'zh-Hans']}
     try:
-        obj = LinkObject(**data)
-        assert obj.hreflang == ['en-US', 'pt-BR', 'zh-Hans']
+        doc = Document(**valid_data)
+        assert doc.data is None
+        assert doc.meta == valid_data['meta']
     except ValidationError as e:
-        pytest.fail(f'ValidationError raised unexpectedly for complex hreflang: {e}')
+        pytest.fail(f"ValidationError raised unexpectedly when 'data' is None with 'meta': {e}")
 
 
-def test_link_object_invalid_hreflang_complex_tags():
-    """Test 'hreflang' with complex invalid language tags."""
-    data = {'href': 'https://example.com/resource', 'hreflang': ['en-US', 'invalid-tag', 'zh-Hans']}
+def test_document_validate_document_data_as_none_without_meta():
+    """Test that 'data' can be None if 'jsonapi' is present."""
+    valid_data = {
+        'data': None,
+        'jsonapi': JSONAPIObject(version='1.1', meta={'documentation': 'https://example.com/docs'}),
+    }
+
+    try:
+        doc = Document(**valid_data)
+        assert doc.data is None
+        assert doc.jsonapi == valid_data['jsonapi']
+    except ValidationError as e:
+        pytest.fail(f"ValidationError raised unexpectedly when 'data' is None with 'jsonapi': {e}")
+
+
+def test_document_validate_document_data_as_none_without_meta_or_jsonapi():
+    """Test that 'data' can be None only if 'meta' or 'jsonapi' is present."""
+    valid_data = {
+        'data': None,
+        'meta': {'info': 'Data is None, but meta is present.'},
+        'jsonapi': JSONAPIObject(version='1.1'),
+    }
+
+    try:
+        doc = Document(**valid_data)
+        assert doc.data is None
+        assert doc.meta == valid_data['meta']
+        assert doc.jsonapi == valid_data['jsonapi']
+    except ValidationError as e:
+        pytest.fail(f"ValidationError raised unexpectedly when 'data' is None with 'meta' and 'jsonapi': {e}")
+
+
+def test_document_validate_document_included_with_lid():
+    """Test that 'included' resources with 'lid' are correctly linked."""
+    data = ResourceObject(
+        type='articles',
+        id='43',
+        attributes={'title': 'Included with LID Article'},
+        relationships={'author': RelationshipObject(data=ResourceIdentifierObject(type='people', lid='local-44'))},
+    )
+
+    included = [ResourceObject(type='people', lid='local-44', attributes={'name': "Brian O'Conner"})]
+
+    valid_document = {'data': data, 'included': included}
+
+    try:
+        doc = Document(**valid_document)
+        assert doc.data == data
+        assert doc.included == included
+    except ValidationError as e:
+        pytest.fail(f"ValidationError raised unexpectedly for included resource with 'lid': {e}")
+
+
+def test_document_validate_document_included_resources_reachable():
+    """Test that all included resources are reachable from primary data."""
+    data = ResourceObject(
+        type='projects',
+        id='44',
+        attributes={'name': 'Project Reachable'},
+        relationships={
+            'leader': RelationshipObject(data=ResourceIdentifierObject(type='people', id='45')),
+            'team': RelationshipObject(
+                data=[
+                    ResourceIdentifierObject(type='people', id='46'),
+                    ResourceIdentifierObject(type='people', id='47'),
+                ]
+            ),
+        },
+    )
+
+    included = [
+        ResourceObject(type='people', id='45', attributes={'name': 'Charlie Brown'}),
+        ResourceObject(type='people', id='46', attributes={'name': 'Lucy van Pelt'}),
+        ResourceObject(type='people', id='47', attributes={'name': 'Linus van Pelt'}),
+    ]
+
+    valid_document = {'data': data, 'included': included}
+
+    try:
+        doc = Document(**valid_document)
+        assert doc.data == data
+        assert doc.included == included
+    except ValidationError as e:
+        pytest.fail(f'ValidationError raised unexpectedly for reachable included resources: {e}')
+
+    # Now, add an unreachable included resource
+    invalid_document = {
+        'data': data,
+        'included': included + [ResourceObject(type='people', id='48', attributes={'name': 'Sally Brown'})],
+    }
+
     with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
+        Document(**invalid_document)
 
-    expected_error = {
-        'loc': ('hreflang', 1),
-        'msg': "'hreflang' must be a valid language tag. Got: invalid-tag",
-        'type': 'value_error',
-    }
-    assert expected_error in exc_info.value.errors(), 'Expected error for invalid hreflang tag not found.'
-
-
-def test_link_object_invalid_rel_characters():
-    """Test that 'rel' must contain only alphanumeric characters."""
-    data = {
-        'href': 'https://example.com/resource',
-        'rel': 'self-link',  # Contains hyphen, which is invalid as per the validator
-    }
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-
-    expected_error = {
-        'loc': ('rel',),
-        'msg': "'rel' must be a valid link relation type (alphanumeric characters only).",
-        'type': 'value_error',
-    }
-    assert expected_error in exc_info.value.errors(), "Expected error for non-alphanumeric 'rel' not found."
-
-
-def test_link_object_invalid_type_non_string():
-    """Test that 'type_' must be a string."""
-    data = {'href': 'https://example.com/resource', 'type': 123}
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-
-    expected_error = {'loc': ('type_',), 'msg': 'str type expected', 'type': 'type_error.str'}
-    assert expected_error in exc_info.value.errors(), "Expected error for non-string 'type_' not found."
-
-
-def test_link_object_invalid_hreflang_type():
-    """Test that 'hreflang' must be string or list of strings."""
-    data = {
-        'href': 'https://example.com/resource',
-        'hreflang': 123,  # Invalid type
-    }
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-
-    expected_error = {
-        'loc': ('hreflang',),
-        'msg': "'hreflang' must be a string or a list of strings.",
-        'type': 'value_error',
-    }
-    assert expected_error in exc_info.value.errors(), "Expected error for invalid 'hreflang' type not found."
-
-
-def test_link_object_hreflang_empty_list():
-    """Test that 'hreflang' as an empty list is invalid."""
-    data = {'href': 'https://example.com/resource', 'hreflang': []}
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-
-    # Depending on validator, it might raise an error for each empty string in list or for the list itself
-    expected_error = {
-        'loc': ('hreflang',),
-        'msg': "'hreflang' must be a valid language tag. Got: ",
-        'type': 'value_error',
-    }
-    # Alternatively, if list is empty, it might not raise specific hreflang errors but still allow it
-    # Adjust the expected behavior based on actual validator implementation
+    actual_errors = exc_info.value.errors()
+    expected_error = "Included resources are not reachable from primary data: {('people', '48')}"
     assert any(
-        error['loc'] == ('hreflang',) for error in exc_info.value.errors()
-    ), "Expected error for empty 'hreflang' list not found."
-
-
-def test_link_object_extra_fields_allowed_if_configured():
-    """Test that extra fields are allowed if the model is configured to allow them."""
-    # This test assumes that LinkObject does not allow extra fields.
-    # If you have configured LinkObject to allow extra fields, adjust accordingly.
-    data = {'href': 'https://example.com/resource', 'extra_field': 'extra_value'}
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-    assert any(
-        error['loc'] == ('extra_field',) for error in exc_info.value.errors()
-    ), 'Expected error for extra_field not found.'
-
-
-def test_link_object_valid_rel_alphanumeric():
-    """Test that 'rel' with only alphanumeric characters is valid."""
-    data = {'href': 'https://example.com/resource', 'rel': 'self123'}
-    try:
-        obj = LinkObject(**data)
-        assert obj.rel == 'self123'
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for valid 'rel': {e}")
-
-
-def test_link_object_invalid_hreflang_non_string_in_list():
-    """Test that 'hreflang' list containing non-string raises error."""
-    data = {'href': 'https://example.com/resource', 'hreflang': ['en', 456, 'fr']}
-    with pytest.raises(ValidationError) as exc_info:
-        LinkObject(**data)
-
-    expected_error = {
-        'loc': ('hreflang', 1),
-        'msg': "Each 'hreflang' entry must be a string. Got: 456",
-        'type': 'value_error',
-    }
-    assert (
-        expected_error in exc_info.value.errors()
-    ), "Expected error for non-string entry in 'hreflang' list not found."
-
-
-def test_link_object_valid_empty_meta():
-    """Test that 'meta' can be an empty dictionary."""
-    data = {'href': 'https://example.com/resource', 'meta': {}}
-    try:
-        obj = LinkObject(**data)
-        assert obj.meta == {}
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for empty 'meta': {e}")
-
-
-def test_link_object_invalid_meta_nested_non_dict():
-    """Test that 'meta' containing nested non-dict raises error."""
-    data = {'href': 'https://example.com/resource', 'meta': {'key': ['list', 'of', 'values']}}
-    try:
-        obj = LinkObject(**data)
-        assert obj.meta == {'key': ['list', 'of', 'values']}
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for nested 'meta': {e}")
-
-
-def test_link_object_invalid_type_special_characters():
-    """Test that 'type_' with special characters is allowed if it's a string."""
-    data = {'href': 'https://example.com/resource', 'type': 'application/vnd.api+json'}
-    try:
-        obj = LinkObject(**data)
-        assert obj.type_ == 'application/vnd.api+json'
-    except ValidationError as e:
-        pytest.fail(f"ValidationError raised unexpectedly for 'type_' with special characters: {e}")
+        expected_error in error['msg'] for error in actual_errors
+    ), f"Expected error message '{expected_error}' not found in actual errors {actual_errors}"
