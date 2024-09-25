@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.2.0 (2024-09-25)
+
+### Feature
+
+* feat: first mvp with simple, Pydantic models (#2)
+
+* feat: simpler version with Pydantic; tests not working
+* feat: add coverage
+* feat: complete coverage and add test build steps
+* docs: provide better documentation site and repo collab docs
+* fix: fixing build issues ([`3cebb77`](https://github.com/kmbhm1/PyJAS/commit/3cebb77cc5225d73f5414dce181edf53a453f49d))
+
 ## v0.1.0 (2024-09-10)
 
 ### Feature
