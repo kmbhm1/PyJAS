@@ -93,9 +93,6 @@ class ResourceIdentifierObject(BaseModel):
         ValueError: ensure at least 'id' or 'lid' are present.
         ValueError: ensure 'type' is a string.
         ValueError: ensure 'id' and 'lid' are strings, if present.
-
-    Returns:
-        ResourceIdentifierObject: a validated ResourceIdentifierObject instance.
     """
 
     model_config = ConfigDict(extra='forbid')
@@ -147,9 +144,6 @@ class LinkObject(BaseModel):
         ValueError: href and describedby are invalid URIs.
         ValueError: each hreflang language tag is valid according to RFC 5646.
         ValueError: ensure type and rel fields are strings, if present.
-
-    Returns:
-        LinkObject: a validated LinkObject instance.
     """
 
     model_config = ConfigDict(extra='forbid')
@@ -231,9 +225,6 @@ class RelationshipObject(BaseModel):
 
     Raises:
         ValueError: ensure at least one of 'links', 'data', or 'meta' is present.
-
-    Returns:
-        RelationshipObject: a validated RelationshipObject instance.
     """
 
     model_config = ConfigDict(extra='allow')
@@ -313,9 +304,6 @@ class ResourceObject(BaseModel):
         ValueError: ensure links are valid LinkObjects.
         ValueError: ensure links are valid keys ('self', 'related', 'describedby', 'pagination').
         ValueError: ensure 'lid' is unique within the document.
-
-    Returns:
-        ResourceObject: a validated ResourceObject instance.
     """
 
     model_config = ConfigDict(extra='forbid')
@@ -479,9 +467,6 @@ class JSONAPIObject(BaseModel):
 
     Raises:
         ValueError: ensure 'version' is one of the allowed JSON:API versions.
-
-    Returns:
-        JSONAPIObject: a validated JSONAPIObject instance.
     """
 
     version: str = '1.1'
