@@ -1,15 +1,9 @@
-from typing import Any
-from pydantic import BaseModel, HttpUrl, ValidationError
+from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 from pyjas.v1_1.jsonapi_builder import (
-    validate_member_name,
     ResourceIdentifierObject,
-    LinkObject,
-    LinkValue,
     RelationshipObject,
     ResourceObject,
-    PrimaryData,
-    ALLOWED_JSONAPI_VERSIONS,
     JSONAPIObject,
     Document,
 )
@@ -223,12 +217,12 @@ def test_document_valid(valid_data):
 @pytest.mark.parametrize(
     'invalid_data, expected_error_messages',
     [
-        # Missing 'data' but including 'included'
+        # 0. Missing 'data' but including 'included'
         (
             {'included': [ResourceObject(type='people', id='9', attributes={'name': 'John Doe'})]},
             ["Value error, A document MUST contain at least one of 'data', 'errors', 'meta', or 'jsonapi'."],
         ),
-        # 'included' with duplicate resources
+        # 1. 'included' with duplicate resources
         (
             {
                 'data': ResourceObject(
@@ -244,7 +238,7 @@ def test_document_valid(valid_data):
             },
             ["Duplicate resource in 'included': type='people', id='9' or lid='None'."],
         ),
-        # 'included' with resources not linked from 'data'
+        # 2. 'included' with resources not linked from 'data'
         (
             {
                 'data': ResourceObject(
@@ -254,7 +248,7 @@ def test_document_valid(valid_data):
             },
             ["Included resources are not reachable from primary data: {('people', '10')}"],
         ),
-        # Document with 'links' containing invalid keys
+        # 3. Document with 'links' containing invalid keys
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
@@ -262,7 +256,7 @@ def test_document_valid(valid_data):
             },
             ["Value error, Invalid link key 'invalid_link' in Document."],
         ),
-        # Document with 'links' containing invalid link values
+        # 4. Document with 'links' containing invalid link values
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
@@ -270,17 +264,17 @@ def test_document_valid(valid_data):
                     'self': 12345  # Invalid type
                 },
             },
-            ['Input should be a valid list'],
+            ['Input should be a valid string'],
         ),
-        # Document with 'links' containing invalid URI string
+        # 5. Document with 'links' containing invalid URI string
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
                 'links': {'self': 'invalid-uri'},
             },
-            ['Input should be a valid dictionary or instance of ResourceObject'],
+            ["Value error, Link 'self' must be a valid URI-reference."],
         ),
-        # 'included' with 'included' resources not linked from 'data'
+        # 6. 'included' with 'included' resources not linked from 'data'
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Main Article'}, relationships={}),
@@ -288,15 +282,15 @@ def test_document_valid(valid_data):
             },
             ["Included resources are not reachable from primary data: {('people', '11')}"],
         ),
-        # 'included' with invalid ResourceObject
+        # 7. 'included' with invalid ResourceObject
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}, relationships={}),
                 'included': ['invalid-included-resource'],
             },
-            ["All items in 'included' must be 'ResourceObject' instances."],
+            ['Input should be a valid dictionary or instance of ResourceObject'],
         ),
-        # 'included' not a list
+        # 8. 'included' not a list
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
@@ -304,7 +298,7 @@ def test_document_valid(valid_data):
             },
             ['Input should be a valid list'],
         ),
-        # Extra members with invalid names
+        # 9. Extra members with invalid names
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
@@ -312,7 +306,7 @@ def test_document_valid(valid_data):
             },
             ["Invalid member name 'invalid-member!' according to JSON:API specification."],
         ),
-        # Document missing 'jsonapi' but including extra members that require validation
+        # 10. Document missing 'jsonapi' but including extra members that require validation
         (
             {
                 'data': ResourceObject(type='articles', id='1', attributes={'title': 'Test Article'}),
@@ -320,7 +314,7 @@ def test_document_valid(valid_data):
             },
             ["Invalid member name 'another_invalid!' according to JSON:API specification."],
         ),
-        # 'data' as list containing invalid types
+        # 11. 'data' as list containing invalid types
         (
             {
                 'data': [
@@ -328,14 +322,14 @@ def test_document_valid(valid_data):
                     'invalid-data-item',
                 ]
             },
-            ["All items in 'data' must be 'ResourceObject' or 'ResourceIdentifierObject' instances."],
+            ['Input should be a valid dictionary or instance of ResourceObject'],
         ),
-        # 'data' as invalid type (not ResourceObject or ResourceIdentifierObject or list)
+        # 12. 'data' as invalid type (not ResourceObject or ResourceIdentifierObject or list)
         (
             {'data': 'invalid-data-type'},
-            ["'data' must be a 'ResourceObject', 'ResourceIdentifierObject', or a list of them."],
+            ['Input should be a valid dictionary or instance of ResourceObject'],
         ),
-        # 'included' with duplicate resources by 'lid'
+        # 13. 'included' with duplicate resources by 'lid'
         (
             {
                 'data': ResourceObject(
@@ -353,7 +347,7 @@ def test_document_valid(valid_data):
             },
             ["Duplicate resource in 'included': type='people', id='None' or lid='local-1'."],
         ),
-        # 'included' with resources not unique by type and id/lid
+        # 14. 'included' with resources not unique by type and id/lid
         (
             {
                 'data': ResourceObject(
@@ -711,7 +705,7 @@ def test_document_additional_valid_cases(valid_data):
         ),
     ],
 )
-def test_document_invalid(invalid_data, expected_error_messages):
+def test_document_invalid_2(invalid_data, expected_error_messages):
     """Test that invalid Document instances raise ValidationError with correct messages."""
     with pytest.raises(ValidationError) as exc_info:
         Document(**invalid_data)

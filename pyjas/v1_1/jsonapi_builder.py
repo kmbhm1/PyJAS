@@ -55,7 +55,7 @@ def validate_member_name(name: str) -> None:
     at_member_pattern = r'^@[A-Za-z0-9\u0080-\uFFFF](?:[A-Za-z0-9\u0080-\uFFFF\-_\ ]*[A-Za-z0-9\u0080-\uFFFF])?$'
 
     # Pattern for Extension Members (namespace:member)
-    extension_pattern = r'^[A-Za-z0-9\u0080-\uFFFF]+:[A-Za-z0-9\u0080-\uFFFF](?:[A-Za-z0-9\u0080-\uFFFF\-_\ ]*[A-Za-z0-9\u0080-\uFFFF])?$'
+    extension_pattern = r'^[A-Za-z0-9\u0080-\uFFFF]+:[A-Za-z0-9\u0080-\uFFFF](?:[A-Za-z0-9\u0080-\uFFFF\-_\ ]*[A-Za-z0-9\u0080-\uFFFF])?$'  # noqa: E501
 
     if re.match(core_pattern, name):
         pass  # Valid core member name
@@ -106,7 +106,7 @@ class ResourceIdentifierObject(BaseModel):
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
-    def validate_id_or_lid(self):
+    def validate_id_or_lid(self) -> ResourceIdentifierObject:
         """Check that the ResourceIdentifierObject has either id or lid."""
         if not self.id_ and not self.lid:
             raise ValueError("ResourceIdentifierObject must have either 'id' or 'lid'.")
@@ -163,7 +163,7 @@ class LinkObject(BaseModel):
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
-    def validate_link_object(self):
+    def validate_link_object(self) -> LinkObject:
         """Validate the LinkObject according to the JSON:API spec."""
         # If 'rel' is present, ensure it's a valid relation type (simple string validation)
         if self.rel is not None and bool(self.rel):
@@ -204,7 +204,7 @@ class LinkObject(BaseModel):
         return bool(pattern.match(tag))
 
 
-LinkValue = Union[str, LinkObject, None]
+LinkValue = Union[str, LinkObject, None]  # noqa: UP007
 """LinkValue: a union type for link values in JSON:API documents.
 
 Refer to https://jsonapi.org/format/#document-links for more information.
@@ -243,7 +243,7 @@ class RelationshipObject(BaseModel):
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
-    def validate_relationship(self):
+    def validate_relationship(self) -> RelationshipObject:
         """Validate the RelationshipObject according to the JSON:API spec."""
         if not self.links and not self.data and not self.meta:
             raise ValueError("RelationshipObject must contain at least one of 'links', 'data', or 'meta'.")
@@ -329,7 +329,7 @@ class ResourceObject(BaseModel):
     meta: dict[str, Any] | None = None
 
     @model_validator(mode='after')
-    def validate_resource_object(self):
+    def validate_resource_object(self) -> ResourceObject:
         """Validate the ResourceObject according to the JSON:API spec."""
         # Ensure type_ is a string
         if not isinstance(self.type_, str) or not bool(self.type_):
@@ -354,7 +354,7 @@ class ResourceObject(BaseModel):
             conflicting_reserved_keys = common_keys.intersection(reserved_keys)
             if conflicting_reserved_keys:
                 raise ValueError(
-                    f'Fields {conflicting_reserved_keys} are reserved and cannot be used as attribute or relationship names.'
+                    f'Fields {conflicting_reserved_keys} are reserved and cannot be used as attribute or relationship names.'  # noqa: E501
                 )
             if common_keys:
                 raise ValueError(
@@ -375,7 +375,7 @@ class ResourceObject(BaseModel):
             foreign_keys = {key for key in attribute_keys if key.endswith('_id')}
             if foreign_keys:
                 raise ValueError(
-                    f'Attribute names {foreign_keys} are reserved for relationships and should not appear in attributes.'
+                    f'Attribute names {foreign_keys} are reserved for relationships and should not appear in attributes.'  # noqa: E501
                 )
 
         # Validate relationships
@@ -385,7 +385,7 @@ class ResourceObject(BaseModel):
             relationship_keys = set(self.relationships.keys())
             if reserved_keys.intersection(relationship_keys):
                 raise ValueError(
-                    f'Relationship names {reserved_keys.intersection(relationship_keys)} are reserved and cannot be used.'
+                    f'Relationship names {reserved_keys.intersection(relationship_keys)} are reserved and cannot be used.'  # noqa: E501
                 )
 
         # Validate links if present
@@ -458,7 +458,7 @@ class ResourceObject(BaseModel):
 
 
 # Primary data as per JSON:API spec
-PrimaryData = Union[
+PrimaryData = Union[  # noqa: UP007
     ResourceObject, ResourceIdentifierObject, list[ResourceObject], list[ResourceIdentifierObject], None
 ]
 
@@ -489,7 +489,7 @@ class JSONAPIObject(BaseModel):
 
     @field_validator('version')
     @classmethod
-    def must_have_correct_version(cls, v):
+    def must_have_correct_version(cls, v: str) -> Any:
         """Validate the 'version' field according to the JSON:API spec."""
         if v not in ALLOWED_JSONAPI_VERSIONS:
             raise ValueError(f"JSONAPI 'version' must be one of {ALLOWED_JSONAPI_VERSIONS}.")
@@ -507,7 +507,7 @@ class Document(BaseModel):
     included: list[ResourceObject] | None = None
 
     @model_validator(mode='after')
-    def validate_document(self):
+    def validate_document(self) -> Document:
         """Validate the Document according to the JSON:API spec."""
 
         # 1. The members 'data' and 'errors' MUST NOT coexist in the same document.
@@ -602,7 +602,7 @@ class Document(BaseModel):
         if data is None:
             return
 
-        resources = []
+        resources: list[Any] = []
         if isinstance(data, list):
             resources = data
         else:
