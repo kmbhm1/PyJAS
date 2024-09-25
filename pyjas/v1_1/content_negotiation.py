@@ -58,7 +58,7 @@ class ContentType:
 
         return cls(media_type=media_type, params=params)
 
-    def validate(self):
+    def validate(self) -> None:
         """Validate the media type and parameters according to the JSON:API spec."""
         # Validate media type
         if self.media_type != self.MEDIA_TYPE:
@@ -134,7 +134,7 @@ class ContentNegotiation:
         """Initialize with the list of supported extension URIs."""
         self.supported_extensions = set(supported_extensions or [])
 
-    def validate_content_type_header(self, content_type_str: str):
+    def validate_content_type_header(self, content_type_str: str) -> None:
         """Validate the Content-Type header of a request.
 
         Raises:
@@ -161,7 +161,7 @@ class ContentNegotiation:
                     f"Unsupported extension(s) in Content-Type header: {', '.join(unsupported_exts)}"
                 )
 
-    def validate_accept_header(self, accept_header: str):
+    def validate_accept_header(self, accept_header: str) -> None:
         """Validate the Accept header of a request.
 
         Raises:
@@ -212,7 +212,7 @@ class ContentNegotiation:
         Returns:
             List[Dict[str, Any]]: List of media ranges with media_type, q, and params.
         """
-        media_ranges = []
+        media_ranges: list[dict[str, Any]] = []
         for media_range_str in accept_header.split(','):
             media_range_str = media_range_str.strip()
             if not media_range_str:
@@ -239,6 +239,7 @@ class ContentNegotiation:
                         uris = value.split()
                         params[key] = uris
             media_ranges.append({'media_type': media_type, 'q': q, 'params': params})
+
         # Sort by q value descending
-        media_ranges.sort(key=lambda x: x['q'], reverse=True)
-        return media_ranges
+        media_ranges.sort(key=lambda x: x['q'], reverse=True)  # mypy: ignore
+        return media_ranges  # mypy: ignore
