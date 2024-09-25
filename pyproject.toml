@@ -36,7 +36,8 @@ keywords = [
     "django",
 ]
 packages = [
-    { include = "pyjas", from = "." }
+    { include = "pyjas", from = '.'},
+    { include = 'v1_1', from = 'pyjas'}
 ]
 
 [tool.poetry.dependencies]
